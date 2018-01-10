@@ -1,0 +1,28 @@
+Three capstone project ideas:
+
+1)Investigate patterns and trends in weekly pharmaceutical pricing over the past two years.  
+
+The National Average Drug Acquisition Cost (NADAC) dataset provides weekly pricing data on hundreds of pharmaceuticals, both branded and generic.  Examining the data for large changes in drug prices over time (either increase, decrease, or perhaps even cyclical) and examining the data for commonalities or other patterns is an interesting problem to solve because it can have a financial impact on both individuals and healthcare providers and may impact costs of healthcare coverage.  
+
+The dataset is publicly available at https://www.healthdata.gov/dataset/nadac-national-average-drug-acquisition-cost
+
+The data definitions are available at
+https://www.medicaid.gov/medicaid-chip-program-information/by-topics/prescription-drugs/ful-nadac-downloads/nadacdatadefinitions.pdf
+
+
+
+2) Investigate patterns and trends in Medicare Provider Utilization and Payment Data.
+
+The Centers for Medicare & Medicaid Services provides access to an enormous annual dataset for services provided through Medicare.  Although the data is aggregated for the year, it is still extremely detailed and includes specific procedures, provider types, specific provider location, as well as Looking either at the pricing data or the utilization data for patterns either over time or geographically is an interesting problem to solve because it may provide some insight into health issues, specific procedures, etc. by region and/or over time for those utilizing Medicare.
+
+Data and methods documentation is available at
+https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/Physician-and-Other-Supplier.html
+
+
+3) Are there factors that are predictive of the development of Urinary Tract Infections (UTI) for patients using a catheter?  
+
+A database of anonymized EMR data contains a variety of patient data that could be analyzed to identify patterns that might serve as a predictive model for the onset of UTI for patients fitted with a catheter.  The Hospital Compare datasets may also provide some supplementary data related to Cathter-associated UTI.  This is an interesting problem to solve because catheter-associated UTIs are an ongoing problem and can have severe consequences.
+
+The EMR dataset is not downloadable.  The Hospital Compare datasets are available at
+https://data.medicare.gov/data/hospital-compare
+
