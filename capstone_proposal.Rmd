@@ -1,0 +1,25 @@
+---
+title: 'Capstone Project: A Predictive Model for Diagnosing Diabetes'
+author: "Keith Engwall"
+date: "1/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Early detection of illness can provide opportunities for early treatment in order to improve outcomes.  Predictive models can be a tool in identifying early indicators for specific conditions that allow for more specific testing to confirm the diagnosis.  This capstone project seeks to develop a predictive model to identify early indicators for Diabetes that could be used by health personnel to recommend further testing for Diabetes earlier than would otherwise be done.
+
+## Methods
+
+### Dataset
+This project will use an Electronic Health Records (EHR) dataset by Practice Fusion to develop the predictive model.  I was able to obtain this data from my mentor.
+
+### Approach
+Data for patients with a diagnosis of Diabetes Mellitus, Type 1 will be compared to data from the overall patient population in the dataset, utilizing data science methods learned in the course, to identify patterns among the other data points, including lab observations, transcripts, allergies, etc.
+
+## Deliverables
+This capstone project will culminate in a report that includes a description of the predictive model, a slide deck illustrating its application to the dataset, and the R code used to develop the model.
