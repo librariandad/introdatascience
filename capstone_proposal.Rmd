@@ -18,8 +18,19 @@ Early detection of illness can provide opportunities for early treatment in orde
 ### Dataset
 This project will use an Electronic Health Records (EHR) dataset by Practice Fusion to develop the predictive model.  I was able to obtain this data from my mentor.
 
+### Potentially correlative data
+The predictive model will look for a confluence of correlations are more prevalent among the population with Diabetes than among the general population.  Within the dataset, these correlations would be expected to show up within the following tables:
+* The Allergy table has fields for allergy type, severity, reaction, and severity, as well as the start year for the allergy
+* The Immunization table contains vaccinations and the year administered
+* The Diagnosis table may have additional diagnoses for the patients, including start and stop year
+* The Transcript table contains data for blood pressure, heart rate, respiratory rate, temperature, height, weight, and BMI
+* The LabObservation table contains values and dates of various tests
+
 ### Approach
-Data for patients with a diagnosis of Diabetes Mellitus, Type 1 will be compared to data from the overall patient population in the dataset, utilizing data science methods learned in the course, to identify patterns among the other data points, including lab observations, transcripts, allergies, etc.
+Patients with a diagnosis of Diabetes Mellitus, Type 1 (as specified in the Diagnosis table by an ICD9Code beginning with 250) will be grouped and compared to the overall patient population in the dataset, looking for combinations of correlations within the data points listed above that occur more frequently within the Diabetes population than within the overall population.
+
+### Exploratory questions
+For example, are there specific test values within the Lab Observation table that occur more frequently among those with the Diabetes diagnosis than the general population?  Are there comorbidities (additional diagnoses) or allergies that occur more frequently within the Diabetes population?  Particular attention should be given to data that comes prior to the diabetes diagnosis, since it would be expected that the Diabetes diagnosis would result in commonalities among the population in terms of medication, specific tests, etc.  Therefore, the date attached to these data needs to be taken into consideration.
 
 ## Deliverables
 This capstone project will culminate in a report that includes a description of the predictive model, a slide deck illustrating its application to the dataset, and the R code used to develop the model.
