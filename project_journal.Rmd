@@ -1,0 +1,45 @@
+---
+title: "Project Notebook"
+author: "Keith Engwall"
+date: "1/23/2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Objectives
+Create a predictive model for identifying patients with Diabetes
+
+See [Capstone Proposal](https://github.com/librariandad/introdatascience/blob/master/capstone_proposal.Rmd) for details.
+
+## Project Dataset
+Practice Fusion De-Identified Data Set containing EHR data for approximately 10,000 de-identified patients, including data points for diagnoses, medication, transcript data, and lab observations.  See the [Data Dictionary](https://github.com/librariandad/introdatascience/blob/master/PracticeFusionDataSetDictionary.pdf) for details.
+
+## Project Notes
+
+### Loading data into R
+The dataset is contained within an SQLite database file (420.7MB).  To load the data into R requires installation and loading of **RSQLite** and **DBI** R packages.  One of the dependencies is the tibble package.  During the install, I was asked whether to install the binary version (1.3.4) or the source version (1.4.1), which would need compilation.  I wasn't comfortable enough to explore compiling R package code yet, so I went with the 1.3.4 version.
+
+I found this brief [example](http://tiffanytimbers.com/querying-sqlite-databases-from-r/) of how to connect to and query an SQLite database file to be very helpful in getting up and going quickly.
+
+```{r eval=FALSE}
+#Connect to SQLite file
+con <- dbConnect(SQLite(), dbname="<data.db")
+
+#Define query and store it in my_query
+my_query <- dbSendQuery(con, "SELECT name from person_table")
+#Fetch data using query and store it in my_data
+my_data <- dbFetch(my_query)
+
+#Clear the results cache from my_query
+dbClearResult(my_query)
+
+#Perform additional queries
+
+#Disconnect from the database file
+dbDisconnect(con)
+```
