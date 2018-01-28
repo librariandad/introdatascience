@@ -1,0 +1,134 @@
+---
+title: '3.1 Exercise 1: Basic Data Manipulation'
+author: "Keith Engwall"
+date: "1/28/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objective
+Clean a toy data set to get it into a format that can be worked with in R.
+
+## Setup
+Load dplyr and tidyr libraries
+```{r}
+library(dplyr)
+library(tidyr)
+```
+## Load data into R
+The data is in a file called refine.csv, which was derived from an Excel file downloaded from [this blog post](http://d3-media.blogspot.nl/2013/11/how-to-refine-your-data.html)
+
+First, verify that refine.csv is in the current directory.
+```{r}
+dir()
+```
+
+Read refine.csv into a data frame.
+```{r}
+toys <- read.csv("refine.csv")
+```
+
+## Clean toys data frame
+
+### Clean company column
+Start by looking at the levels in toys$company
+
+```{r}
+levels(toys$company)
+```
+
+There are several versions of each company name, including mixed case, misspellings, etc.  Start by loading the levels into a vector and display it.
+```{r}
+company_levels <- levels(toys$company)
+
+company_levels
+```
+
+There are four company names: Akzo, Philips, Unilever, and Van Houten.  Examining the levels, only the Akzo variations start with a or A, only the Philips variations start with p or P, only the Unilever variations start with u or U, and only the Van Houten levels start with v or V.  Load these into separate vectors.
+
+```{r}
+akzo_levels <- grep('^[aA]',company_levels, value=TRUE)
+philips_levels <- grep('^[pP]',company_levels, value=TRUE)
+unilever_levels <- grep('^[uU]',company_levels, value=TRUE)
+vanhouten_levels <- grep('^[vV]',company_levels, value=TRUE)
+```
+
+Each of these vectors can be used to collapse the levels in toys$company into the corrected company names
+
+```{r}
+levels(toys$company) <- list(Akzo = akzo_levels, Philips = philips_levels, Unilever = unilever_levels, VanHouten = vanhouten_levels)
+
+levels(toys$company)
+```
+
+### Separate Product.code...number into two columns
+
+Use tidyr::separate to split this column into two new columns
+
+```{r}
+toys <- toys %>% separate(Product.code...number,c("product_code","product_number"),sep = "-")
+```
+
+### Create product_category column that replaces product codes with corresponding categories
+p = Smartphone
+v = TV
+x = Laptop
+q = Tablet
+
+```{r}
+toys <- toys %>% 
+  mutate(product_category = 
+             replace(product_code,
+                   c(
+                     grep("p",toys$product_code),
+                     grep("v",toys$product_code),
+                     grep("x",toys$product_code),
+                     grep("q",toys$product_code)
+                     ),
+                   c(
+                     rep("Smartphone",length(which(toys$product_code=="p"))),
+                     rep("TV",length(which(toys$product_code=="v"))),
+                     rep("Laptop",length(which(toys$product_code=="x"))),
+                     rep("Tablet",length(which(toys$product_code=="q"))))
+                   )
+         )
+```
+
+### gather the address components into a single address column
+
+Need to convert these to character vectors first
+```{r}
+toys$address <- as.character(toys$address)
+toys$city <- as.character(toys$city)
+toys$country <- as.character(toys$country)
+```
+
+Use paste to collapse these into a new column, full_address
+```{r}
+toys <- toys %>% mutate(full_address = paste(address, city, country, sep = ", "))
+
+toys
+```
+
+### create binary columns for each company
+create company_[name] columns that contain 1 for rows containing that company and 0 for rows that don't
+
+```{r}
+toys <- toys %>% mutate(company_akzo = as.integer(grepl("Akzo",company)))
+toys <- toys %>% mutate(company_philips = as.integer(grepl("Philips",company)))
+toys <- toys %>% mutate(company_unilever = as.integer(grepl("Unilever",company)))
+toys <- toys %>% mutate(company_vanhouten = as.integer(grepl("VanHouten",company)))
+```
+
+### create binary columns for each product category
+same with product categories
+
+```{r}
+toys <- toys %>% mutate(product_smartphone = as.integer(grepl("Smartphone",product_category)))
+toys <- toys %>% mutate(product_tv = as.integer(grepl("TV",product_category)))
+toys <- toys %>% mutate(product_laptop = as.integer(grepl("Laptop",product_category)))
+toys <- toys %>% mutate(product_tablet = as.integer(grepl("Tablet",product_category)))
+```
