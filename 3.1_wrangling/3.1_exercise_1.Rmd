@@ -28,7 +28,7 @@ dir()
 
 Read refine.csv into a data frame.
 ```{r}
-toys <- read.csv("refine.csv")
+toys <- read.csv("refine_original.csv")
 ```
 
 ## Clean toys data frame
