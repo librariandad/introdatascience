@@ -19,16 +19,16 @@ See [Capstone Proposal](https://github.com/librariandad/introdatascience/blob/ma
 ## Project Dataset
 Practice Fusion De-Identified Data Set containing EHR data for approximately 10,000 de-identified patients, including data points for diagnoses, medication, transcript data, and lab observations.  See the [Data Dictionary](https://github.com/librariandad/introdatascience/blob/master/PracticeFusionDataSetDictionary.pdf) for details.
 
-## Project Notes
+## General Notes
 
-### Loading data into R
+### Working with SQLite
 The dataset is contained within an SQLite database file (420.7MB).  To load the data into R requires installation and loading of **RSQLite** and **DBI** R packages.  One of the dependencies is the tibble package.  During the install, I was asked whether to install the binary version (1.3.4) or the source version (1.4.1), which would need compilation.  I wasn't comfortable enough to explore compiling R package code yet, so I went with the 1.3.4 version.
 
 I found this brief [example](http://tiffanytimbers.com/querying-sqlite-databases-from-r/) of how to connect to and query an SQLite database file to be very helpful in getting up and going quickly.
 
 ```{r eval=FALSE}
 #Connect to SQLite file
-con <- dbConnect(SQLite(), dbname="<data.db")
+con <- dbConnect(SQLite(), dbname="data.db")
 
 #Define query and store it in my_query
 my_query <- dbSendQuery(con, "SELECT name from person_table")
@@ -42,4 +42,125 @@ dbClearResult(my_query)
 
 #Disconnect from the database file
 dbDisconnect(con)
+```
+
+dplyr also has sqlite functions
+
+## Project Notes
+
+### R Packages
+The following packages are needed to work on the project.
+
+Note that dbplyr is required to make database connections using dplyr functions.
+```{r}
+library(tidyr)
+library(dplyr)
+library(dbplyr)
+```
+
+### Connect to database
+Note that dbplyr library is required in order for this command to work
+```{r}
+# Connect to database
+my_db <- src_sqlite("compData.db")
+```
+
+### Load relevant tables
+The tables of interest are:
+
+* *training_diagnosis* contains diagnosis information (we need this in order to identify the patients diagnosed with diabetes)
+* *training_allergy* contains allergy information for patient
+* *training_medication* contains medication information for patient
+* *training_patient* contains gender and year of birth
+* *training_smoke* combines patient info with smoking statuses
+* *lab tables* contain lab results
+    + *training_labResult* contains a record of lab results for a particular transcript
+    + *training_labPanel* links training_labResult and training_labObservation
+    + *training_labObservation* contains details regarding lab tests
+
+```{r}
+diagnosis_tbl <- tbl(my_db, sql("SELECT DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute FROM training_diagnosis"))
+allergy_tbl <- tbl(my_db, sql("SELECT AllergyGuid, PatientGuid, AllergyType, StartYear as AllergyStartYear, ReactionName, SeverityName, MedicationNdcCode FROM training_allergy"))
+medication_tbl <- tbl(my_db, sql("SELECT MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid FROM training_medication"))
+patient_tbl <- tbl(my_db, sql("SELECT PatientGuid, Gender, YearOfBirth FROM training_patient"))
+transcript_tbl <- tbl(my_db, sql("SELECT TranscriptGuid, PatientGuid, VisitYear, Height, Weight, BMI, SystolicBP, DiastolicBP, RespiratoryRate, HeartRate, Temperature FROM training_transcript"))
+smoke_tbl <- tbl(my_db, sql("SELECT PatientGuid, SmokeEffectiveYear, SmokingStatus_Description, SmokingStatus_NISTCode FROM training_smoke"))
+# to get a single table that links the observation data back to the patient,
+# join training_labResult, training_labPanel, and training labObservation
+lab_tbl <- left_join(left_join(tbl(my_db,sql("SELECT LabResultGuid, PatientGuid FROM training_labResult")),tbl(my_db,sql("SELECT LabResultGuid, LabPanelGuid, PanelName FROM training_labPanel")), by="LabResultGuid"),tbl(my_db,"training_labObservation"), by="LabPanelGuid")
+```
+
+### Identify target population  
+All Type 1 Diabetes diagnoses have an ICD9Code that starts with 205.  We have a table with all of the diagnoses and one with only the diabetes diagnoses.
+
+```{r}
+diabetes_tbl <- tbl(my_db, sql("SELECT DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute FROM training_diagnosis WHERE ICD9Code LIKE '250%'")) %>% glimpse()
+```
+
+### Identify allergy data for target population
+```{r warning=FALSE}
+# join allergy_tbl to diabetes_tbl to get allergy data for diabetic patients
+diabetes_allergy_tbl <- as_tibble(left_join(diabetes_tbl, allergy_tbl, by = c("PatientGuid"))) %>%
+  select(PatientGuid, AllergyGuid, AllergyType, ReactionName, SeverityName, AllergyMedicationNdcCode = MedicationNdcCode)
+
+# add has_allergy to diabetes_allergy_tbl to indicate whether diabetic patient has allergies
+diabetes_allergy_tbl <- diabetes_allergy_tbl %>%
+  mutate(has_allergy = as.integer(!is.na(diabetes_allergy_tbl$AllergyGuid)))
+
+glimpse(diabetes_allergy_tbl)
+```
+
+### Identify medication data for target population
+Exclude medication specifically given in response to diabetes diagnosis (?)
+```{r warning=FALSE}
+# join medication_tbl to diabetes_tbl to get medication data for diabetic patients
+# filter out medication that is linked to the diabetes diagnosis
+diabetes_medication_tbl <- as_tibble(left_join(diabetes_tbl, medication_tbl, by = c("PatientGuid"))) %>% 
+  filter(DiagnosisGuid.x != DiagnosisGuid.y) %>% 
+  select(PatientGuid, MedicationGuid, MedicationNdcCode)
+
+# add has_meds to diabetes_medication_tbl to indicate whether diabetic patient has medication
+diabetes_medication_tbl <- diabetes_medication_tbl %>%
+  mutate(has_meds = as.integer(!is.na(diabetes_medication_tbl$MedicationGuid)))
+
+glimpse(diabetes_medication_tbl)
+
+```
+
+### Identify patient information for target population
+```{r warning=FALSE}
+# join patient_tbl to diabetes_tbl to get gender & age data for diabetic patients
+diabetes_patient_tbl <- as_tibble(left_join(diabetes_tbl, patient_tbl, by = c("PatientGuid"))) %>%
+  select(PatientGuid, Gender, YearOfBirth) %>% glimpse()
+```
+
+### Identify smoking information for target population
+Need to parse through results to identify smokers, former smokers, etc.  How should these be grouped?
+
+```{r warning=FALSE}
+# join smoke_tbl to diabetes_tbl to get smoking data for diabetic patients
+diabetes_smoke_tbl <- as_tibble(left_join(diabetes_tbl, smoke_tbl, by = c("PatientGuid"))) %>%
+  select(PatientGuid, SmokeEffectiveYear, SmokingStatus_Description, SmokingStatus_NISTCode) %>%
+  arrange(SmokingStatus_NISTCode) %>%
+  glimpse()
+```
+
+### Identify lab information for target population
+```{r warning=FALSE}
+# join lab_tbl to diabetes_tbl to get lab results data for diabetic patients
+diabetes_lab_tbl <- as_tibble(left_join(diabetes_tbl, lab_tbl, by = c("PatientGuid"))) %>%
+  select(PatientGuid, LabObservationGuid, HL7Identifier, HL7Text, HL7CodingSystem, ObservationValue, Units, ReferenceRange, AbnormalFlags, ResultStatus, ObservationYear)
+
+# add has_labs to diabetes_lab_tbl to indicate whether diabetic patient has lab results
+diabetes_lab_tbl <- diabetes_lab_tbl %>%
+  mutate(has_labs = as.integer(!is.na(diabetes_lab_tbl$LabObservationGuid)))
+
+glimpse(diabetes_lab_tbl)
+
+```
+
+### disconnect from database
+This is getting an error.  May have to use a different method to connect
+```{r eval=FALSE}
+dbDisconnect(my_db)
 ```
