@@ -47,11 +47,11 @@ company_levels <- levels(toys$company)
 company_levels
 ```
 
-There are four company names: Akzo, Philips, Unilever, and Van Houten.  Examining the levels, only the Akzo variations start with a or A, only the Philips variations start with p or P, only the Unilever variations start with u or U, and only the Van Houten levels start with v or V.  Load these into separate vectors.
+There are four company names: Akzo, Philips, Unilever, and Van Houten.  Examining the levels, only the Akzo variations start with a or A, only the Philips variations start with p or P or f, only the Unilever variations start with u or U, and only the Van Houten levels start with v or V.  Load these into separate vectors.
 
 ```{r}
 akzo_levels <- grep('^[aA]',company_levels, value=TRUE)
-philips_levels <- grep('^[pP]',company_levels, value=TRUE)
+philips_levels <- grep('^[pPf]',company_levels, value=TRUE)
 unilever_levels <- grep('^[uU]',company_levels, value=TRUE)
 vanhouten_levels <- grep('^[vV]',company_levels, value=TRUE)
 ```
@@ -131,4 +131,9 @@ toys <- toys %>% mutate(product_smartphone = as.integer(grepl("Smartphone",produ
 toys <- toys %>% mutate(product_tv = as.integer(grepl("TV",product_category)))
 toys <- toys %>% mutate(product_laptop = as.integer(grepl("Laptop",product_category)))
 toys <- toys %>% mutate(product_tablet = as.integer(grepl("Tablet",product_category)))
+```
+
+## write to clean csv
+```{r}
+write_csv(toys, "refine_clean.csv")
 ```
