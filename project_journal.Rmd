@@ -79,7 +79,7 @@ The tables of interest are:
     + *training_labObservation* contains details regarding lab tests
 
 ```{r}
-diagnosis_tbl <- tbl(my_db, sql("SELECT DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute FROM training_diagnosis"))
+diagnosis_tbl <- tbl(my_db, sql("SELECT DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute FROMs training_diagnosis"))
 allergy_tbl <- tbl(my_db, sql("SELECT AllergyGuid, PatientGuid, AllergyType, StartYear as AllergyStartYear, ReactionName, SeverityName, MedicationNdcCode FROM training_allergy"))
 medication_tbl <- tbl(my_db, sql("SELECT MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid FROM training_medication"))
 patient_tbl <- tbl(my_db, sql("SELECT PatientGuid, Gender, YearOfBirth FROM training_patient"))
