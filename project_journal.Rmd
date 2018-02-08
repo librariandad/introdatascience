@@ -56,6 +56,7 @@ Note that dbplyr is required to make database connections using dplyr functions.
 library(tidyr)
 library(dplyr)
 library(dbplyr)
+library(readr)
 ```
 
 ### Connect to database
@@ -79,7 +80,9 @@ The tables of interest are:
     + *training_labObservation* contains details regarding lab tests
 
 ```{r}
-diagnosis_tbl <- tbl(my_db, sql("SELECT DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute FROMs training_diagnosis"))
+diagnosis_tbl <- tbl(my_db, sql("SELECT DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute FROM training_diagnosis"))
+```
+```{r}
 allergy_tbl <- tbl(my_db, sql("SELECT AllergyGuid, PatientGuid, AllergyType, StartYear as AllergyStartYear, ReactionName, SeverityName, MedicationNdcCode FROM training_allergy"))
 medication_tbl <- tbl(my_db, sql("SELECT MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid FROM training_medication"))
 patient_tbl <- tbl(my_db, sql("SELECT PatientGuid, Gender, YearOfBirth FROM training_patient"))
@@ -163,4 +166,95 @@ glimpse(diabetes_lab_tbl)
 This is getting an error.  May have to use a different method to connect
 ```{r eval=FALSE}
 dbDisconnect(my_db)
+```
+
+## Revised process for loading and organizing data
+
+Read the data files into R.  Use select statements to pre-filter the desired columns.
+
+```{r message=FALSE, warning=FALSE}
+
+patient <- read_csv("db/training_patient.csv")
+
+diagnosis <- read_csv("db/training_diagnosis.csv") %>%
+  select(DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute)
+
+allergy <- read_csv("db/training_allergy.csv") %>%
+  select(AllergyGuid, PatientGuid, AllergyType, AllergyStartYear = StartYear, ReactionName, SeverityName, MedicationNdcCode)
+
+allergy <- transform(allergy, MedicationNdcCode = as.character(MedicationNdcCode))                     
+medication <- read_csv("db/training_medication.csv") %>%
+  select(MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid)
+
+immunization <- read_csv("db/training_immunization.csv") %>%
+  select(ImmunizationGuid, PatientGuid, VaccineName, AdministeredYear, CvxCode)
+
+# read in lab observations joined to include PatientGuid and PanelName
+labs <- left_join(
+  left_join(
+    read_csv("db/training_labResult.csv") %>%
+      select(LabResultGuid,PatientGuid, TranscriptGuid),
+    read_csv("db/training_labPanel.csv") %>%
+      select(LabResultGuid, LabPanelGuid, PanelName),
+    by="LabResultGuid"
+  ),
+  read_csv("db/training_labObservation.csv"),
+  by="LabPanelGuid"
+)  
+
+# read in transcript table
+transcript <- read_csv("db/training_transcript.csv") %>%
+  select(TranscriptGuid, PatientGuid, VisitYear, Height, Weight, BMI, SystolicBP, DiastolicBP, RespiratoryRate, HeartRate, Temperature)
+
+# read in smoke table
+smoke <- read_csv("db/training_smoke.csv") %>%
+  select(PatientGuid, SmokeEffectiveYear, SmokingStatus_Description, SmokingStatus_NISTCode)
+
+#read in join tables
+transDiag <- read_csv("db/training_transcriptDiagnosis.csv")
+transMed <- read_csv("db/training_transcriptMedication.csv")
+transAllergy <- read_csv("db/training_transcriptAllergy.csv")
+```
+
+join tables that link on transcript
+```{r message = FALSE}
+#join diagnosis and transcript
+diagJoin <- left_join(diagnosis, transDiag) %>% select(-TranscriptDiagnosisGuid)
+diagTran <- left_join(diagJoin, transcript)
+diagTran$TranscriptGuid[is.na(diagTran$TranscriptGuid)] <- "DIAG"
+
+#join medication and transcript
+medJoin <- left_join(medication, transMed) %>% select(-TranscriptMedicationGuid)
+medTran <- left_join(medJoin, transcript)
+medTran$TranscriptGuid[is.na(medTran$TranscriptGuid)] <- "MED"
+
+# join allergy and transcript
+allerJoin <- left_join(allergy,transAllergy) %>% select(-TranscriptAllergyGuid)
+allerTran <- left_join(allerJoin, transcript)
+allerTran$TranscriptGuid[is.na(allerTran$TranscriptGuid)] <- "ALLERGY"
+
+# join medTran, diagTran, allerTran, and rest of transcript
+allerDiagMedTran <- full_join(full_join(full_join(allerTran,diagTran),medTran),transcript)
+```
+
+give non-transcript tables TranscriptGuid column so that they join without causing cartesian products
+```{r message=FALSE}
+smoke <- smoke %>% mutate(TranscriptGuid = "SMOKE")
+immunization <- immunization %>% mutate(TranscriptGuid = "IMMUNIZATION")
+```
+
+join remaining tables
+```{r message=FALSE}
+admts <- full_join(allerDiagMedTran, smoke)
+admtsi <- full_join(admts, immunization)
+admtsil <- full_join(admtsi, labs)
+patient_pop_data <- left_join(patient,admtsil)
+```
+isolate diabetes patients 
+```{r}
+diabetes_pop_data <- patient_pop_data %>% filter(dmIndicator == 1)
+
+glimpse(patient_pop_data)
+
+glimpse(diabetes_pop_data)
 ```
