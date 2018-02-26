@@ -16,11 +16,12 @@ Create a predictive model for identifying patients with Diabetes
 
 See [Capstone Proposal](https://github.com/librariandad/introdatascience/blob/master/capstone_proposal.Rmd) for details.
 
-## Questions
+## Project Questions
 
-What is the mean age of diabetic patients?
+What is the mean age of diabetic patients?  How does this compare to the general population?
 
-What proportion of diabetic patients are male? female?
+What proportion of diabetic patients are male? female?  How does this compare?
+
 
 Are there specific allergies that are significantly more or less common among diabetic patients than in the general population?
 
