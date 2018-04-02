@@ -1,7 +1,7 @@
 ---
-title: "Project Notebook"
+title: "Milestone Report"
 author: "Keith Engwall"
-date: "1/23/2018"
+date: "4/2/2018"
 output:
   pdf_document: default
   html_document: default
@@ -11,42 +11,11 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Project Objectives
-Create a predictive model for identifying patients with Diabetes
+## Data observations
 
-See [Capstone Proposal](https://github.com/librariandad/introdatascience/blob/master/capstone_proposal.Rmd) for details.
+Upon an exploratory look at the data, the following observations can be made regarding comparisons between diabetic patients and non-diabetic patients in the data set.
 
-## Project Questions
-
-What is the mean age of diabetic patients?  How does this compare to the general population?
-
-What proportion of diabetic patients are male? female?  How does this compare?
-
-
-Are there specific allergies that are significantly more or less common among diabetic patients than in the general population?
-
-Are there specific diagnoses significantly more or less common among diabetic patients than in the general population?
-
-Other than medication for diabetes, are there specific medications significantly more or less prescribed to diabetic patients than the general population?
-
-Are there specific abnormal lab readings that occur significantly more or less common among diabetic patients than the general population?
-
-How do standard patient readings (heart rate, blood pressure, temperature, etc.) compare between diabetic patients and the general population?
-
-Is there any correlation between diabetes and smoking?
-
-
-## Project Dataset
-Practice Fusion De-Identified Data Set containing EHR data for approximately 10,000 de-identified patients, including data points for diagnoses, medication, transcript data, and lab observations.  See the [Data Dictionary](https://github.com/librariandad/introdatascience/blob/master/PracticeFusionDataSetDictionary.pdf) for details.
-
-
-## Project Notes
-
-### Load R Packages
-The following packages are needed to work on the project.
-
-Note that dbplyr is required to make database connections using dplyr functions.
-```{r}
+```{r echo=FALSE, include=FALSE}
 library(tidyr)
 library(dplyr)
 library(dbplyr)
@@ -54,12 +23,7 @@ library(readr)
 library(ggplot2)
 library(Hmisc)
 ```
-
-### Load Data from csv files
-
-Read the data files into R.  Use select statements to pre-filter the desired columns.
-
-```{r message=FALSE, warning=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 
 patient <- read_csv("db/training_patient.csv") %>%
   select(-PracticeGuid)
@@ -106,32 +70,20 @@ transDiag <- read_csv("db/training_transcriptDiagnosis.csv")
 transMed <- read_csv("db/training_transcriptMedication.csv")
 transAllergy <- read_csv("db/training_transcriptAllergy.csv")
 ```
-
-### prepare prescription data frame
-
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 presMed <- left_join(prescription, medication)
 presJoin <- left_join(presMed, transMed) %>% select(-TranscriptMedicationGuid)
 presTran <- left_join(presJoin, transcript)
 ```
-
-### prepare diagnosis data frame
-
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 diagJoin <- left_join(diagnosis, transDiag) %>% select(-TranscriptDiagnosisGuid)
 diagTran <- left_join(diagJoin, transcript)
 ```
-
-### prepare allergy data frame
-
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 allerJoin <- left_join(allergy, transAllergy) %>% select(-TranscriptAllergyGuid)
 allerTran <- left_join(allerJoin, transcript)
 ```
-
-### prepare labs data frame
-
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 # read in lab observations joined to include PatientGuid and PanelName
 labs <- left_join(
   left_join(labResult, labPanel, by="LabResultGuid"),
@@ -139,21 +91,17 @@ labs <- left_join(
   by="LabPanelGuid"
 )  
 ```
-### prepare smoking data frame
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 smoke <- smoke %>% mutate(TranscriptGuid = "SMOKE")
 ```
-
-### prepare master data frame
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 dataJoin <- full_join(presJoin, diagJoin)
 dataJoin <- full_join(dataJoin, allerJoin)
 dataJoin <- full_join(dataJoin, labs)
 dataJoin <- full_join(dataJoin, smoke)
 dataMaster <- left_join(dataJoin, transcript)
 ```
-### create data frames
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 patientPrescription <- left_join(patient, presTran)
 patientDiagnosis <- left_join(patient, diagTran)
 patientAllergy <- inner_join(patient, allerTran)
@@ -162,9 +110,7 @@ patientSmoke <- left_join(patient, smoke)
 patientMaster <- left_join(patient, dataMaster)
 patientTranscript <- inner_join(patient, transcript)
 ```
-
-### create diabetic data frames
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 diabeticBase <- patient %>% filter(dmIndicator == 1)
 diabeticPrescription <- patientPrescription %>% filter(dmIndicator == 1)
 diabeticDiagnosis <- patientDiagnosis %>% filter(dmIndicator == 1)
@@ -173,9 +119,7 @@ diabeticLabs <- patientLabs %>% filter(dmIndicator == 1)
 diabeticSmoke <- patientSmoke %>% filter(dmIndicator == 1)
 diabeticMaster <- patientMaster %>% filter(dmIndicator == 1)
 ```
-
-### Diagnoses
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 patientDiagnosis$diagCat <-
   ifelse((as.integer(patientDiagnosis$ICD9Code) < 140), 
     "Infectious/Parasitic",
@@ -240,19 +184,25 @@ patientDiagnosis$diagCat <-
 
 
 ### Compare age between diabetic patients and non-diabetic patients
-```{r}
-ggplot(patient, aes(x = diabetesStatus, y = age)) +
-  geom_boxplot()
+It appears that the population with diabetes is older than the general population.
+
+```{r echo=FALSE}
 boxplot(age~diabetesStatus,data=patient, outline = FALSE)
 ```
+
 ### Compare gender
-```{r}
+Although the number of male and female diabetic patients does not differ much, the ratio of diabetic vs. non-diabetic patients is greater among males than females.
+
+```{r echo=FALSE}
 ggplot(arrange(patient, rev(dmIndicator)), aes(x=Gender,fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic")))) +
   geom_bar(position = "dodge") +
   labs(fill="Diabetes Status")
 ```
+
 ### Allergies
-```{r}
+Among non-medical allergy types, there appears to be a large proportion of diabetic patients with egg and peanut allergies in comparison to the general population.  The number of diabetic patients with egg allergies actually outnumbers non-diabetic patients.
+
+```{r echo=FALSE}
 patientAllergy %>%
   filter(AllergyType != "Medication") %>%
   ggplot(aes(x=AllergyType, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
@@ -261,11 +211,13 @@ patientAllergy %>%
   theme(axis.text.x = element_text(angle = 30, hjust = 1))
 ```
 
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 medicationMap <- medication %>% select(MedicationNdcCode, MedicationName) %>% group_by(MedicationNdcCode) %>% distinct(MedicationName) %>% arrange(MedicationNdcCode)
 ```
 
-```{r}
+Among the allergies to medicine, there appears to be an large proportion of diabetic patients with an allergy to Lisinopril compared to the general population.
+
+```{r echo=FALSE}
 allergyMeds <- inner_join(patientAllergy,medicationMap, by = c("AllergyMedicationNdcCode" = "MedicationNdcCode"))
 
 diabeticMedNames <- allergyMeds %>% filter(dmIndicator == "1") %>% select(MedicationName) %>% distinct()
@@ -283,47 +235,42 @@ diabeticAllergyMeds %>%
 ```
 
 ### Weight
-```{r}
-patientTranscript %>%
-  filter(Weight < 500 & Weight > 0) %>%
-  ggplot(aes(x=Weight,fill=diabetesStatus)) +
-  geom_histogram(binwidth=50, position="dodge")
+There appears to be a slight difference in weight between diabetic and non-diabetic patients, with diabetic patients having a higher weight.
 
+```{r echo=FALSE}
 boxplot(Weight~diabetesStatus, data=patientTranscript %>%filter(Weight > 0), outline = FALSE)
 ```
 
-```{r}
+### Height
+There is also a slight difference in height, where diabetic patients are slightly shorter.
+
+```{r echo=FALSE}
 boxplot(as.integer(Height)~diabetesStatus, data=patientTranscript %>% filter(Height != "NULL"), outline=FALSE)
 ```
-```{r}
-boxplot(as.integer(Temperature)~diabetesStatus, data=patientTranscript %>% filter(Temperature != "NULL"), outline = FALSE)
-```
-### BMI
-```{r}
-patientTranscript %>%
-  filter(BMI > 0) %>%
-  select(BMI)
 
+### BMI
+As BMI is typically calculated as a function of height and weight, it is no surprise that there is a greater difference between diabetic and non-diabetic patients, with diabetics having a higher BMI.
+
+```{r echo = FALSE}
 boxplot(BMI~diabetesStatus, data=patientTranscript %>% filter(BMI >0), outline=FALSE)
 ```
 
+### Pulse Pressure (Systolic - Diastolic)
+Diabetic patients have a higher Pulse Pressure than non-diabetic patients.
 
-```{r}
-boxplot(as.integer(SystolicBP)~diabetesStatus, data=patientTranscript %>% filter(SystolicBP != "NULL"), outline=FALSE)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+patientTranscript <- patientTranscript %>%
+  replace_na(list(SystolicBP = 0, DiastolicBP = 0)) %>%
+  mutate(pulsePressure = as.integer(SystolicBP) - as.integer(DiastolicBP))
+```
+```{r echo = FALSE}
+boxplot(pulsePressure~diabetesStatus, data=patientTranscript %>% filter(pulsePressure > 0), outline=FALSE)
 ```
 
+### Patient Diagnosis
+There appears to be a higher ratio of diabetic patients with Circulatory and Endocrine/Nutritional/Metabolic diagnoses in comparison to the general population.
 
-```{r}
-boxplot(as.integer(DiastolicBP)~diabetesStatus, data=patientTranscript %>% filter(SystolicBP != "NULL"), outline=FALSE)
-```
-
-```{r}
-boxplot(as.integer(RespiratoryRate)~diabetesStatus, data=patientTranscript %>% filter(RespiratoryRate != "NULL"), outline=FALSE)
-```
-
-
-
-```{r}
+```{r echo=FALSE}
 patientDiagnosis %>%
   filter(diagCat != "NULL") %>%
   ggplot(aes(x=diagCat, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
@@ -333,64 +280,43 @@ patientDiagnosis %>%
 
 ```
 
-### Age & Gender plot
-
-```{r}
-ggplot(patient, aes(x = Gender, y = 2011 - YearOfBirth, col = factor(dmIndicator), 
-                    fill = factor(dmIndicator), group = factor(dmIndicator))) +
-  stat_summary(fun.data = mean_sdl, fun.args = list(mult = 1), position = position_dodge(width = 1))
-
-ggplot(patient, aes(x = Gender, y = 2011 - YearOfBirth, col = factor(dmIndicator), 
-                    fill = factor(dmIndicator), group = factor(dmIndicator))) +
-geom_boxplot()
-```
-
-### BMI plot
-```{r}
-patientMaster %>%
-  filter(BMI < 100) %>%
-ggplot(aes(x = 2011 - YearOfBirth, y = BMI, col = factor(dmIndicator))) +
-  geom_point()
-  #  stat_summary(fun.data = mean_sdl, fun.args = list(mult = 1), position = position_dodge(width = 1))
-
-```
 
 
-### Abnormal Labs
-```{r}
-patientLabs <- patientLabs %>% unite(obs_unit, ObservationValue, Units)
-```
+### Labs Data
 
-```{r}
+Patients with diabetes have a larger range and lower g/dL for Hemoglobin tests.
+
+```{r echo=FALSE}
 boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Hemoglobin"), outline=FALSE)
 ```
 
-```{r}
+Diabetic patients have a lower % on Hematocrit tests
+```{r echo = FALSE}
 boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Hematocrit"), outline=FALSE)
 ```
 
-```{r}
+Diabetic patients have a wider range of mmol/L but similar central tendency on Chloride tests
+
+```{r echo=FALSE}
 boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Chloride"), outline=FALSE)
 ```
 
-```{r}
+Diabetic patients have a higher mg/dL on Triglyceride tests.
+
+```{r echo=FALSE}
 boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Triglyceride"), outline=FALSE)
 ```
 
-```{r}
+Diabetic patients have a narrower range but a lower central tendancy of x10E3/uL on Platelets tests.
+
+```{r echo=FALSE}
 boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Platelets"), outline=FALSE)
 ```
 
+Diabetic patients have a much higher % on Red Blood Cell Distribution Width tests.
 
-```{r}
+```{r echo=FALSE}
 boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "RBC DISTRIBUTION WIDTH"), outline=FALSE)
 ```
-
-```{r}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "ABS SEGS"), outline=FALSE)
-```
-
-
-
 
 
