@@ -126,6 +126,10 @@ coef(summary(sat.voting.mod))
 ## Exercise: least squares regression
 ## ────────────────────────────────────────
 
+################################################
+#######Exercise work is in linear_regression.Rmd!!!!!!
+################################################
+
 ##   Use the /states.rds/ data set. Fit a model predicting energy consumed
 ##   per capita (energy) from the percentage of residents living in
 ##   metropolitan areas (metro). Be sure to
