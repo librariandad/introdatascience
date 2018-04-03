@@ -1,0 +1,213 @@
+---
+title: "LinearRegression_Homework"
+author: "Keith Engwall"
+date: "3/31/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+list.files("dataSets")
+```
+
+```{r}
+# read the states data
+states.data <- readRDS("dataSets/states.rds") 
+#get labels
+states.info <- data.frame(attributes(states.data)[c("names", "var.labels")])
+#look at last few labels
+tail(states.info, 8)
+```
+
+
+```{r}
+# summary of expense and csat columns, all rows
+sts.ex.sat <- subset(states.data, select = c("expense", "csat"))
+summary(sts.ex.sat)
+```
+
+```{r}
+# correlation between expense and csat
+cor(sts.ex.sat)
+```
+
+```{r}
+# scatter plot of expense vs csat
+plot(sts.ex.sat)
+```
+
+
+```{r}
+# Fit our regression model
+sat.mod <- lm(csat ~ expense, # regression formula
+              data=states.data) # data set
+summary(sat.mod)
+```
+
+```{r}
+summary(lm(csat ~ expense + percent, data = states.data))
+```
+
+
+```{r}
+class(sat.mod)
+names(sat.mod)
+methods(class = class(sat.mod))[1:9]
+```
+
+
+```{r}
+confint(sat.mod)
+```
+
+```{r}
+hist(residuals(sat.mod))
+```
+
+```{r}
+par(mar = c(4, 4, 2, 2), mfrow = c(1, 2)) #optional
+plot(sat.mod, which = c(1, 2)) # "which" argument optional
+```
+
+```{r}
+# fit another model, adding house and senate as predictors
+sat.voting.mod <-  lm(csat ~ expense + house + senate,
+                      data = na.omit(states.data))
+sat.mod <- update(sat.mod, data=na.omit(states.data))
+```
+
+```{r}
+# compare using the anova() function
+anova(sat.mod, sat.voting.mod)
+coef(summary(sat.voting.mod))
+```
+
+## Exercise: least squares regression
+## ────────────────────────────────────────
+
+##   Use the /states.rds/ data set. Fit a model predicting energy consumed
+##   per capita (energy) from the percentage of residents living in
+##   metropolitan areas (metro). Be sure to
+##   1. Examine/plot the data before fitting the model
+##   2. Print and interpret the model `summary'
+##   3. `plot' the model to look for deviations from modeling assumptions
+
+##   Select one or more additional predictors to add to your model and
+##   repeat steps 1-3. Is this model significantly better than the model
+##   with /metro/ as the only predictor?
+
+```{r}
+plot(states.data$metro,states.data$energy)
+```
+
+```{r}
+EnergyModel = lm(energy ~ metro, data = states.data)
+summary(EnergyModel)
+```
+
+
+```{r}
+par(mar = c(4, 4, 2, 2), mfrow = c(1, 2)) #optional
+plot(EnergyModel, which = c(1, 2)) # "which" argument optional
+```
+
+```{r}
+EnergyModel2 = lm(energy ~ metro + area, data=states.data)
+summary(EnergyModel2)
+```
+
+```{r}
+SSE2 = sum(EnergyModel2$residuals^2)
+SSE2
+RMSE2 = sqrt(SSE2/nrow(states.data))
+RMSE2
+mean(states.data$energy, na.rm=TRUE)
+```
+
+```{r}
+EnergyModel3 = lm(energy ~ metro + area + toxic + green + expense + percent + miles + college, data=states.data)
+summary(EnergyModel3)
+SSE3 = sum(EnergyModel3$residuals^2)
+RMSE3 = sqrt(sum(SSE3/nrow(states.data)))
+SSE3
+RMSE3
+```
+
+```{r}
+EnergyModel4 = lm(energy ~ metro + area + toxic + green + college + high + expense + percent + miles + pop, data = states.data)
+summary(EnergyModel4)
+SSE4 = sum(EnergyModel4$residuals^2)
+RMSE4 = sqrt(sum(SSE4/nrow(states.data)))
+SSE4
+RMSE4
+```
+
+
+```{r}
+  #Add the interaction to the model
+sat.expense.by.percent <- lm(csat ~ expense*income,
+                             data=states.data) 
+#Show the results
+  coef(summary(sat.expense.by.percent)) # show regression coefficients table
+```
+
+```{r}
+# make sure R knows region is categorical
+str(states.data$region)
+states.data$region <- factor(states.data$region)
+#Add region to the model
+sat.region <- lm(csat ~ region,
+                 data=states.data) 
+#Show the results
+coef(summary(sat.region)) # show regression coefficients table
+anova(sat.region) # show ANOVA table
+```
+
+```{r}
+# print default contrasts
+contrasts(states.data$region)
+# change the reference group
+coef(summary(lm(csat ~ C(region, base=4),
+                data=states.data)))
+# change the coding scheme
+coef(summary(lm(csat ~ C(region, contr.helmert),
+                data=states.data)))
+
+```
+
+```{r}
+EnergyModel5 = lm(energy ~ metro + area + toxic + green, data=states.data)
+summary(EnergyModel5)
+SSE5 = sum(EnergyModel5$residuals^2)
+RMSE5 = sqrt(sum(SSE5/nrow(states.data)))
+SSE5
+RMSE5
+```
+
+```{r}
+EnergyModel6 = lm(energy ~ metro + area + toxic + density*green, data=states.data)
+summary(EnergyModel6)
+SSE6 = sum(EnergyModel6$residuals^2)
+RMSE6 = sqrt(sum(SSE6/nrow(states.data)))
+SSE6
+RMSE6
+```
+
+```{r}
+EnergyModel7 = lm(energy ~ metro + area + toxic + density*green + region, data=states.data)
+summary(EnergyModel7)
+SSE7 = sum(EnergyModel7$residuals^2)
+RMSE7 = sqrt(sum(SSE7/nrow(states.data)))
+SSE7
+RMSE7
+```
+
+
+
+
+
