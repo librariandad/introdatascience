@@ -1,7 +1,7 @@
 ---
 title: "Statistical Analysis Report"
 author: "Keith Engwall"
-date: "4/2/2018"
+date: "4/8/2018"
 output:
   pdf_document: default
   html_document: default
@@ -11,312 +11,45 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Data observations
+## Project Objectives
+Create a predictive model for identifying patients with Diabetes
 
-Upon an exploratory look at the data, the following observations can be made regarding comparisons between diabetic patients and non-diabetic patients in the data set.
+## Project Dataset
+Practice Fusion De-Identified Data Set containing EHR data for approximately 10,000 de-identified patients, including data points for diagnoses, medication, transcript data, and lab observations.
 
-```{r echo=FALSE, include=FALSE}
-library(tidyr)
-library(dplyr)
-library(dbplyr)
-library(readr)
-library(ggplot2)
-library(Hmisc)
-```
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+## Initial Findings
 
-patient <- read_csv("db/training_patient.csv") %>%
-  select(-PracticeGuid)
+### Age & Gender
+The diabetic population trends male and older than the non-diabetic population.
 
-patient <- patient %>% mutate(age = 2000 - YearOfBirth)
-patient$diabetesStatus <- ifelse(patient$dmIndicator, "Diabetic", "NonDiabetic")
-
-diagnosis <- read_csv("db/training_diagnosis.csv") %>%
-  select(DiagnosisGuid, DiagnosisDescription, PatientGuid, ICD9Code, StartYear, StopYear, Acute)
-
-allergy <- read_csv("db/training_allergy.csv") %>%
-  select(AllergyGuid, PatientGuid, AllergyType, AllergyStartYear = StartYear, ReactionName, SeverityName, AllergyMedicationNdcCode = MedicationNdcCode)
-
-allergy <- transform(allergy, AllergyMedicationNdcCode = as.character(AllergyMedicationNdcCode))
-
-prescription <- read_csv("db/training_prescription.csv") %>%
-  select(PrescriptionGuid, PatientGuid, MedicationGuid, PrescriptionYear, Quantity, GenericAllowed)
-
-medication <- read_csv("db/training_medication.csv") %>%
-  select(MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid)
-
-immunization <- read_csv("db/training_immunization.csv") %>%
-  select(ImmunizationGuid, PatientGuid, VaccineName, AdministeredYear, CvxCode)
-
-labResult <- read_csv("db/training_labResult.csv") %>%
-  select(LabResultGuid,PatientGuid, TranscriptGuid)
-
-labPanel <- read_csv("db/training_labPanel.csv") %>%
-  select(LabResultGuid, LabPanelGuid, PanelName)
-
-labObservation <- read_csv("db/training_labObservation.csv")
-
-
-# read in transcript table
-transcript <- read_csv("db/training_transcript.csv") %>%
-  select(TranscriptGuid, PatientGuid, VisitYear, Height, Weight, BMI, SystolicBP, DiastolicBP, RespiratoryRate, HeartRate, Temperature)
-
-# read in smoke table
-smoke <- read_csv("db/training_smoke.csv") %>%
-  select(PatientGuid, SmokeEffectiveYear, SmokingStatus_Description, SmokingStatus_NISTCode)
-
-#read in join tables
-transDiag <- read_csv("db/training_transcriptDiagnosis.csv")
-transMed <- read_csv("db/training_transcriptMedication.csv")
-transAllergy <- read_csv("db/training_transcriptAllergy.csv")
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-presMed <- left_join(prescription, medication)
-presJoin <- left_join(presMed, transMed) %>% select(-TranscriptMedicationGuid)
-presTran <- left_join(presJoin, transcript)
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-diagJoin <- left_join(diagnosis, transDiag) %>% select(-TranscriptDiagnosisGuid)
-diagTran <- left_join(diagJoin, transcript)
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-allerJoin <- left_join(allergy, transAllergy) %>% select(-TranscriptAllergyGuid)
-allerTran <- left_join(allerJoin, transcript)
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-# read in lab observations joined to include PatientGuid and PanelName
-labs <- left_join(
-  left_join(labResult, labPanel, by="LabResultGuid"),
-  labObservation,
-  by="LabPanelGuid"
-)  
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-smoke <- smoke %>% mutate(TranscriptGuid = "SMOKE")
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-dataJoin <- full_join(presJoin, diagJoin)
-dataJoin <- full_join(dataJoin, allerJoin)
-dataJoin <- full_join(dataJoin, labs)
-dataJoin <- full_join(dataJoin, smoke)
-dataMaster <- left_join(dataJoin, transcript)
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-patientPrescription <- left_join(patient, presTran)
-patientDiagnosis <- left_join(patient, diagTran)
-patientAllergy <- inner_join(patient, allerTran)
-patientLabs <- inner_join(patient, labs)
-patientSmoke <- left_join(patient, smoke)
-patientMaster <- left_join(patient, dataMaster)
-patientTranscript <- inner_join(patient, transcript)
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-diabeticBase <- patient %>% filter(dmIndicator == 1)
-diabeticPrescription <- patientPrescription %>% filter(dmIndicator == 1)
-diabeticDiagnosis <- patientDiagnosis %>% filter(dmIndicator == 1)
-diabeticAllergy <- patientAllergy %>% filter(dmIndicator == 1)
-diabeticLabs <- patientLabs %>% filter(dmIndicator == 1)
-diabeticSmoke <- patientSmoke %>% filter(dmIndicator == 1)
-diabeticMaster <- patientMaster %>% filter(dmIndicator == 1)
-```
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-patientDiagnosis$diagCat <-
-  ifelse((as.integer(patientDiagnosis$ICD9Code) < 140), 
-    "Infectious/Parasitic",
-    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 140 &
-      as.integer(patientDiagnosis$ICD9Code) < 240), 
-      "Neoplasms",
-      ifelse((as.integer(patientDiagnosis$ICD9Code) >=240 &
-        as.integer(patientDiagnosis$ICD9Code) < 280),
-          "Endocrine/Nutritional/Metabolic",
-          ifelse((as.integer(patientDiagnosis$ICD9Code) >= 280 &
-            as.integer(patientDiagnosis$ICD9Code) < 290),
-            "Blood",
-            ifelse((as.integer(patientDiagnosis$ICD9Code) >= 290 &
-              as.integer(patientDiagnosis$ICD9Code) < 320),
-              "Mental",
-              ifelse((as.integer(patientDiagnosis$ICD9Code) >= 320 &
-                as.integer(patientDiagnosis$ICD9Code) < 390),
-                "Nervous",
-                ifelse((as.integer(patientDiagnosis$ICD9Code) >= 390 &
-                  as.integer(patientDiagnosis$ICD9Code) < 460),
-                  "Circulatory",
-                  ifelse((as.integer(patientDiagnosis$ICD9Code) >= 460 &
-                    as.integer(patientDiagnosis$ICD9Code) < 520),
-                    "Respiratory",
-                    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 520 &
-                      as.integer(patientDiagnosis$ICD9Code) < 580),
-                      "Digestive",
-  ifelse((as.integer(patientDiagnosis$ICD9Code) >= 580 &
-    as.integer(patientDiagnosis$ICD9Code) < 630), 
-    "Genitourinary",
-    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 630 &
-      as.integer(patientDiagnosis$ICD9Code) < 680), 
-      "Pregnancy",
-      ifelse((as.integer(patientDiagnosis$ICD9Code) >=680 &
-        as.integer(patientDiagnosis$ICD9Code) < 710),
-          "Skin",
-          ifelse((as.integer(patientDiagnosis$ICD9Code) >=710 &
-            as.integer(patientDiagnosis$ICD9Code) < 740),
-            "Musculoskeletal",
-            ifelse((as.integer(patientDiagnosis$ICD9Code) >= 740 &
-              as.integer(patientDiagnosis$ICD9Code) < 760),
-              "Congenital",
-              ifelse((as.integer(patientDiagnosis$ICD9Code) >= 760 &
-                as.integer(patientDiagnosis$ICD9Code) < 780),
-                "Perinatal",
-                ifelse((as.integer(patientDiagnosis$ICD9Code) >= 780 &
-                  as.integer(patientDiagnosis$ICD9Code) < 800),
-                  "Ill Defined", 
-                  ifelse((as.integer(patientDiagnosis$ICD9Code) >= 800),
-                    "Injury/Poisoning", 
-                    "NULL"
-                    )
-                  )
-                )
-            )
-          )
-      )
-    )
-  ))))))))))
-  
-```
-
-
-### Compare age between diabetic patients and non-diabetic patients
-It appears that the population with diabetes is older than the general population.
-
-```{r echo=FALSE}
-boxplot(age~diabetesStatus,data=patient, outline = FALSE)
-```
-
-### Compare gender
-Although the number of male and female diabetic patients does not differ much, the ratio of diabetic vs. non-diabetic patients is greater among males than females.
-
-```{r echo=FALSE}
-ggplot(arrange(patient, rev(dmIndicator)), aes(x=Gender,fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic")))) +
-  geom_bar(position = "dodge") +
-  labs(fill="Diabetes Status")
-```
+### Weight, Height & BMI
+Diabetic patients have a slightly higher weight and shorter height than non-diabetic patients.  Thus, their BMI trends higher.
 
 ### Allergies
 Among non-medical allergy types, there appears to be a large proportion of diabetic patients with egg and peanut allergies in comparison to the general population.  The number of diabetic patients with egg allergies actually outnumbers non-diabetic patients.
 
-```{r echo=FALSE}
-patientAllergy %>%
-  filter(AllergyType != "Medication") %>%
-  ggplot(aes(x=AllergyType, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
-  geom_bar(position="dodge") +
-  labs(fill = "Diabetes Status") +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
-```
-
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-medicationMap <- medication %>% select(MedicationNdcCode, MedicationName) %>% group_by(MedicationNdcCode) %>% distinct(MedicationName) %>% arrange(MedicationNdcCode)
-```
-
 Among the allergies to medicine, there appears to be an large proportion of diabetic patients with an allergy to Lisinopril compared to the general population.
 
-```{r echo=FALSE}
-allergyMeds <- inner_join(patientAllergy,medicationMap, by = c("AllergyMedicationNdcCode" = "MedicationNdcCode"))
+### Blood Pressure
+The pulse pressure (Systolic BP - Diastolic BP) of diabetic patients is slightly higher than non-diabetic patients.
 
-diabeticMedNames <- allergyMeds %>% filter(dmIndicator == "1") %>% select(MedicationName) %>% distinct()
+### Diagnosis Categories
+To simplify analysis of diagnoses, the various diagnoses were divided into categories based on the ICD9 Codes.  The diagnosis categories with the highest ratio between diabetic and non-diabetic patients are Circulatory and Endocrine/Nutritional/Metabolic.
 
-diabeticAllergyMeds <- inner_join(allergyMeds,diabeticMedNames)
+### Lab Result Analysis
+The lab results were limited to those for which there were sufficient abnormal readings data for the diabetic population.  For each lab result, an overall measure of central tendency was analyzed, as well as an analysis of abnormal lab result status.
 
-topAllergyNdcCodes <- data.frame("AllergyMedicationNdcCode" = c("67253020150", "68180051602", "61392003395", "64248000410", "64248011710", "58016011850", "68453011505"))
+#### Hemoglobin Lab Results
+Hemoglobin levels have a lower central tendency in diabetic patients than in non-diabetic patients.  When results recorded as abnormal are separated out, the diabetic population has a larger percentage of below normal readings.  The central tendency of above normal readings were higher and of below normal readings were lower among the diabetic population.  The central tendency of normal readings was slightly lower in the diabetic population.
 
-diabeticAllergyMeds <- inner_join(allergyMeds,topAllergyNdcCodes)
+#### Hematocrit Lab Results
+The central tendency of Hematocrit percentage was lower in the diabetic population than in the non-diabetic population. The ratio of above normal readings was lower and of below normal readings was higher among the diabetic population.  The central tendency of above normal readings was higher and of below normal readings was lower in the diabetic population.  The central tendency of normal readings was lower in the diabetic population.
 
-diabeticAllergyMeds %>%
-  ggplot(aes(x=MedicationName, fill=diabetesStatus))+
-  geom_bar(position="dodge") +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
-```
+#### Triglyceride Lab Results
+The central tendency of triglyceride levels is higher in the diabetic population than in the non-diabetic population.  There is a higher ratio of above normal triglyceride readings in the diabetic population, and both the above normal and normal triglyceride levels are higher in the diabetic population.
 
-### Weight
-There appears to be a slight difference in weight between diabetic and non-diabetic patients, with diabetic patients having a higher weight.
+#### Platelets Lab Results
+The central tendency of Platelet levels is lower in the diabetic population than in the non-diabetic population, particularly in the normal set.  The ratio of both above and below normal readings are greater in the diabetic population, but the abnormal levels aren't as severe.
 
-```{r echo=FALSE}
-boxplot(Weight~diabetesStatus, data=patientTranscript %>%filter(Weight > 0), outline = FALSE)
-```
-
-### Height
-There is also a slight difference in height, where diabetic patients are slightly shorter.
-
-```{r echo=FALSE}
-boxplot(as.integer(Height)~diabetesStatus, data=patientTranscript %>% filter(Height != "NULL"), outline=FALSE)
-```
-
-### BMI
-As BMI is typically calculated as a function of height and weight, it is no surprise that there is a greater difference between diabetic and non-diabetic patients, with diabetics having a higher BMI.
-
-```{r echo = FALSE}
-boxplot(BMI~diabetesStatus, data=patientTranscript %>% filter(BMI >0), outline=FALSE)
-```
-
-### Pulse Pressure (Systolic - Diastolic)
-Diabetic patients have a higher Pulse Pressure than non-diabetic patients.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-patientTranscript <- patientTranscript %>%
-  replace_na(list(SystolicBP = 0, DiastolicBP = 0)) %>%
-  mutate(pulsePressure = as.integer(SystolicBP) - as.integer(DiastolicBP))
-```
-```{r echo = FALSE}
-boxplot(pulsePressure~diabetesStatus, data=patientTranscript %>% filter(pulsePressure > 0), outline=FALSE)
-```
-
-### Patient Diagnosis
-There appears to be a higher ratio of diabetic patients with Circulatory and Endocrine/Nutritional/Metabolic diagnoses in comparison to the general population.
-
-```{r echo=FALSE}
-patientDiagnosis %>%
-  filter(diagCat != "NULL") %>%
-  ggplot(aes(x=diagCat, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
-  geom_bar(position="dodge") +
-  labs(fill = "Diabetes Status") +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
-
-```
-
-
-
-### Labs Data
-
-Patients with diabetes have a larger range and lower g/dL for Hemoglobin tests.
-
-```{r echo=FALSE}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Hemoglobin"), outline=FALSE)
-```
-
-Diabetic patients have a lower % on Hematocrit tests
-```{r echo = FALSE}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Hematocrit"), outline=FALSE)
-```
-
-Diabetic patients have a wider range of mmol/L but similar central tendency on Chloride tests
-
-```{r echo=FALSE}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Chloride"), outline=FALSE)
-```
-
-Diabetic patients have a higher mg/dL on Triglyceride tests.
-
-```{r echo=FALSE}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Triglyceride"), outline=FALSE)
-```
-
-Diabetic patients have a narrower range but a lower central tendancy of x10E3/uL on Platelets tests.
-
-```{r echo=FALSE}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Platelets"), outline=FALSE)
-```
-
-Diabetic patients have a much higher % on Red Blood Cell Distribution Width tests.
-
-```{r echo=FALSE}
-boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "RBC DISTRIBUTION WIDTH"), outline=FALSE)
-```
-
-
+### Prescription Data
+There are 18 medications with at least 300 prescriptions and at least 60% use by diabetic patients. 
