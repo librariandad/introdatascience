@@ -190,3 +190,30 @@ glimpse(patient_pop_data)
 
 glimpse(diabetes_pop_data)
 ```
+
+
+
+
+### Age & Gender plot
+
+```{r}
+ggplot(patient, aes(x = Gender, y = 2011 - YearOfBirth, col = factor(dmIndicator), 
+                    fill = factor(dmIndicator), group = factor(dmIndicator))) +
+  stat_summary(fun.data = mean_sdl, fun.args = list(mult = 1), position = position_dodge(width = 1))
+
+ggplot(patient, aes(x = Gender, y = 2011 - YearOfBirth, col = factor(dmIndicator), 
+                    fill = factor(dmIndicator), group = factor(dmIndicator))) +
+geom_boxplot()
+```
+
+### BMI plot
+```{r}
+patientMaster %>%
+  filter(BMI < 100) %>%
+ggplot(aes(x = 2011 - YearOfBirth, y = BMI, col = factor(dmIndicator))) +
+  geom_point()
+  #  stat_summary(fun.data = mean_sdl, fun.args = list(mult = 1), position = position_dodge(width = 1))
+
+```
+
+d

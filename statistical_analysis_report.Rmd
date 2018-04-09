@@ -34,7 +34,7 @@ Among the allergies to medicine, there appears to be an large proportion of diab
 The pulse pressure (Systolic BP - Diastolic BP) of diabetic patients is slightly higher than non-diabetic patients.
 
 ### Diagnosis Categories
-To simplify analysis of diagnoses, the various diagnoses were divided into categories based on the ICD9 Codes.  The diagnosis categories with the highest ratio between diabetic and non-diabetic patients are Circulatory and Endocrine/Nutritional/Metabolic.
+To simplify analysis of diagnoses, the various diagnoses were divided into categories based on the ICD9 Codes.  The diagnosis categories with the highest ratio between diabetic and non-diabetic patients is Circulatory.  Within the Circulatory, there are almost as many diabetic patients with Essential Hypertension (ICD9 Code #401) as non-diabetic patients. 
 
 ### Lab Result Analysis
 The lab results were limited to those for which there were sufficient abnormal readings data for the diabetic population.  For each lab result, an overall measure of central tendency was analyzed, as well as an analysis of abnormal lab result status.
