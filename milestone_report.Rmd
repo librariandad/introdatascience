@@ -15,7 +15,11 @@ knitr::opts_chunk$set(echo = TRUE)
 This project will attempt to create a predictive model for identifying patients with diabetes (or at least at risk for diabetes) using patient characteristics such as age, gender, allergies, comorbidities, prescriptions, and a variety of measures such as BMI, blood pressure, hemoglobin levels, etc.
 
 ## Data
-The project makes use of an EMR data set from 2012 of approx. 10,000 patients.  The data set includes tables for patients, allergies, diagnoses, and prescriptions, as well as tables for transcripts of visit data and labs.  The key tables and fields are described below.
+The project makes use of an EMR data set from 2012 of approx. 10,000 patients.  The data set includes tables for patients, allergies, diagnoses, and prescriptions, as well as tables for transcripts of visit data and labs. In Figure 1 you can see the relationship diagram between the Patient and Diagnoisis tables.  The full ER Diagram is available as Appendix A.  
+
+![Patient and Diagnosis Tables](ER_Diagram_Screenshot.png)
+
+The diabetic patients are identified using a dmIndicator field in the patient table (not shown in the ER Diagram).  The project will attempt to use patient data to predict which patients are in the diabetic group (dmIndicator = 1) as opposed to the non-diabetic group (dmIndicator = 0). Significant tables and fields containing the data this project will use are described below.
 
 ### Patient Table
 The patient table contains an indicator field to identify the diabetic population, as well as the patient's gender and year of birth
@@ -36,18 +40,114 @@ The transcript table contains fields for height, weight, BMI, SystolicBP, Diasto
 The lab observation table contains values from a variety of labs identified by an HL7 identifier.  The text for these is more standardized and can be used to identify the type of lab the observations are for.  The observation value and units fields provide the actual measurement values.  There is an identifier for abnormal values as well as an abnormal flags field which indicates whether the abnormal value is high or low and to what degree.
 
 ## Limitations
-Although there is also an immunization table and a smoking status table, these do not provide sufficient data to analyze.  Although the data structure allows for labs to link to visit transcripts, none do.
+Although there is also an immunization table and a smoking status table, these do not provide sufficient data to analyze.  Although the data structure allows for labs to link to visit transcripts, none do.  Smoking data is too sparse and vague to use for analysis.
 
 ## Data Cleaning
-The tables contain several fields that are not relevant to analysis, such as the practice identifier, physician specialty, etc.  The tables must be joined to link data to specific patients, as well as to each other (allergy & medication, prescription & medication, lab result & lab panel & lab observations, etc.).
+The raw data was contained in Comma Separated Values (CSV) files, one for each table.  Each file was loaded into a separate data frame using read_csv().  Relevant fields were selected using select(). The example below shows the patient and diagnosis table files being read into data frames.
 
-Age was derived by subtracting the year of birth from 2010 (the median year for the data contained in the data set).  The allergy field for the medication ndc code had to be renamed to disambiguate it from the prescription field of the same name.  Numerous fields needed to be converted into numeric or integer types.  In order to analyze systolic and diastolic blood pressure as a pair, a field for pulse pressure (systolic bp - diastolic bp) was added.
+```{r eval = FALSE}
+# read patient table into data frame.
+patient <- read_csv("db/training_patient.csv") %>%
+  select(-PracticeGuid)
 
-Some of the data had too much differentiation and needed to be chunked in order to be analyzed.  For instance, the diagnoses were chunked into categories based on ICD-9 Code ranges.  Some of the data needed to be filtered to remove insignificant data.  For example, there were few if any records in the allergy table for the various types of medication allergies among the diabetic population.  And for most of the remaining data, the ratio of diabetic patients with a particular medication allergy to non-diabetic patients was not of note.  Therefore, the medication allergy data was filtered down to those for which there was at least one diabetic patient with an allergy and at least 20 patients overall with an allergy.
+# read diagnosis table into data frame.  
+diagnosis <- read_csv("db/training_diagnosis.csv") %>%
+  select(DiagnosisGuid, DiagnosisDescription, PatientGuid, ICD9Code, StartYear, StopYear, Acute)
+```
 
-In order to identify the medication allergies, a map needed to be created between the ndc code and the medication name from the data in the medication table.
+Since data was spread across different tables, the corresponding data frames needed to be joined in order to pull the data together into a single data frame.  The example below shows the joining of patient, diagnosis, and transcript data.
+
+```{r eval=FALSE}
+# join the diagnosis frame and the transcript/diagnosis join frame, removing the join primary key (it's unnecessary)
+diagJoin <- left_join(diagnosis, transDiag) %>% select(-TranscriptDiagnosisGuid)
+
+# join the above frame with the transcript frame
+diagTran <- left_join(diagJoin, transcript)
+
+# join the patient frame with the above frame
+patientDiagnosis <- left_join(patient, diagTran)
+```
+
+Some fields needed to be derived.  For example, the age of the patients needed to be derived from the year of birth.  The median year for the data set was 2010, and was used to derive the age from the patient data.
+
+```{r eval = FALSE}
+patient <- patient %>% mutate(age = 2010 - YearOfBirth)
+```
+
+The allergy field for the medication ndc code had to be renamed to disambiguate it from the prescription field of the same name.  Numerous fields needed to be converted into numeric or integer types.  In order to analyze systolic and diastolic blood pressure as a pair, a field for pulse pressure (systolic bp - diastolic bp) was added.
+
+```{r eval = FALSE}
+# add pulsePressure column to transcript (SystolicBP - DiastolicBP)
+transcript <- transcript %>%
+  filter(!is.na(SystolicBP)) %>% filter(!is.na(DiastolicBP)) %>% filter(SystolicBP > 0 & DiastolicBP > 0) %>%
+  mutate(pulsePressure = SystolicBP - DiastolicBP)
+```
+
+Some of the data had too much differentiation and needed to be chunked in order to be analyzed.  For example, the diagnoses were chunked into categories based on ICD-9 Code ranges.  Some of the data needed to be filtered to remove insignificant data.
+
+```{r eval=FALSE}
+patientDiagnosis$diagCat <-
+  ifelse((as.integer(patientDiagnosis$ICD9Code) < 140), 
+    "Infectious/Parasitic",
+    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 140 &
+      as.integer(patientDiagnosis$ICD9Code) < 240), 
+      "Neoplasms",
+      ifelse((as.integer(patientDiagnosis$ICD9Code) >=240 &
+        as.integer(patientDiagnosis$ICD9Code) < 280),
+          "Endocrine/Nutritional/Metabolic",
+          ...
+```
+
+There were few if any records in the allergy table for the various types of medication allergies among the diabetic population.  And for most of the remaining data, the ratio of diabetic patients with a particular medication allergy to non-diabetic patients was not of note.  Therefore, the medication allergy data was filtered down to those for which there was at least one diabetic patient with an allergy and at least 20 patients overall with an allergy.  A medication map needed to be created to map the NDC code for medication to the medication name.
+
+```{r eval=FALSE}
+# create medicationMap data frame linking medication names to their NDC Codes
+medicationMap <- medication %>% select(MedicationNdcCode, MedicationName) %>% group_by(MedicationNdcCode) %>% distinct(MedicationName) %>% arrange(MedicationNdcCode)
+
+# use inner join to filter patients to those 
+# with medication allergies, and pull in the names for the medications
+allergyMeds <- inner_join(patientAllergy,medicationMap, by = c("AllergyMedicationNdcCode" = "MedicationNdcCode"))
+
+# identify the medications by name for which diabetic patients have allergies
+diabeticMedNames <- allergyMeds %>% filter(dmIndicator == "1") %>% select(MedicationName) %>% distinct()
+
+# use inner join to filter patients to those using the medications for which
+# diabetic patients also have allergies (filter out all medication allergies
+# for which diabetic patients do not have allergies)
+diabeticAllergyMeds <- inner_join(allergyMeds,diabeticMedNames)
+
+# identify the medications for which at least 20 patients have allergies
+topAllergyNdcCodes <- diabeticAllergyMeds %>%
+  group_by(AllergyMedicationNdcCode) %>% 
+  summarise(n = n()) %>%
+  ungroup() %>%
+  filter(n >= 20) %>%
+  select(AllergyMedicationNdcCode)
+
+# use inner join to filter data to those medications for which at least 20 
+# patients have allergies
+diabeticAllergyMeds <- inner_join(allergyMeds,topAllergyNdcCodes)
+```
 
 For medication usage, the vast amount of data needed to be filtered still more.  Only data where diabetic patients accounted for greater than 60% were included.  Also, only data where there were greater than 300 records were included.
+
+```{r eval = FALSE}
+# get a count of prescriptions for medications used by diabetic patients
+diabeticMedicationList <- patientPrescription %>% filter(dmIndicator == 1) %>% group_by(MedicationName) %>% summarise(n = n()) %>% ungroup() %>% arrange(desc(n))
+
+# join with a count of prescriptions for medications used by all patients
+diabeticMedicationList <- inner_join(diabeticMedicationList, patientPrescription %>% group_by(MedicationName) %>% summarise(n = n()) %>% ungroup() %>% arrange(desc(n)), by="MedicationName")
+
+# get the ratio between diabetic prescriptions and total prescriptions
+diabeticMedicationList <- diabeticMedicationList %>%
+  mutate(useRatio = n.x/n.y)
+
+# had to tweak the filter to get a reasonably small set of the medications with the highest ratio of diabetic prescriptions with the highest number of overall prescriptions
+topDiabeticMedicationList <- diabeticMedicationList %>% filter(n.y > 300 & useRatio > .6) %>% arrange(desc(useRatio))
+
+# create a data frame limited to the top diabetic prescription list
+topDiabeticPrescriptions <- inner_join(patientPrescription, topDiabeticMedicationList, by="MedicationName")
+```
 
 The abnormal flags needed to be reordered in order to display in a logical order (high to low) rather than in alphabetical order.  Likewise, a field was added to provide a text equivalent for the diabetic patient indicator in order to be interpreted properly in the graphs.
 
@@ -287,19 +387,18 @@ patientDiagnosis$diagCat <-
 \pagebreak
 
 ## Initial Findings
-
-Based on initial findings, there are some patient characteristics that may contribute to a predictive model.
+In order to identify which data might be useful in predicting diabetic patients, some exploratory analysis was performed to compare the data between patients with diabetes and those without.  The results of this analysis which indicate a potentially useful data field are shown below.
 
 ### Age & Gender
-The diabetic population trends male and older than the non-diabetic population.
+The diabetic population trends male and older than the non-diabetic population.  Since Age data is continuous, a box plot was used.
 
-```{r echo = FALSE, fig.height = 4}
+```{r fig.height = 3}
 boxplot(age~diabetesStatus,data=patient, outline = FALSE, main = "Patient Age", ylab = "Age (yr)", xlab = "Diabetes Status")
 ```
 
-&nbsp;
+Since Gender data is categorical, a bar graph is used.  Note that although the number of male and female diabetic patients are similar, the number of male non-diabetic patients is smaller, resulting in a larger ratio of male diabetic patients.
 
-```{r echo = FALSE, fig.height = 3}
+```{r fig.height = 3}
 ggplot(arrange(patient, rev(dmIndicator)), aes(x=Gender,fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic")))) +
   geom_bar(position = "dodge") +
   labs(title = "Patient Gender", fill="Diabetes Status") +
@@ -311,14 +410,14 @@ ggplot(arrange(patient, rev(dmIndicator)), aes(x=Gender,fill=factor(diabetesStat
 ### BMI
 Diabetic patients have a slightly higher weight and shorter height than non-diabetic patients.  Thus, their BMI trends higher.
 
-```{r echo = FALSE, fig.height = 3.5}
+```{r echo = FALSE, fig.height = 3}
 boxplot(BMI~diabetesStatus, data=patientTranscript %>% filter(!is.na(BMI)) %>% filter(BMI >0), outline=FALSE, main = "BMI", ylab = "BMI", xlab = "Diabetes Status")
 ```
 
 ### Allergies
-Among non-medical allergy types, there appears to be a large proportion of diabetic patients with egg and peanut allergies in comparison to the general population.  The number of diabetic patients with egg allergies actually outnumbers non-diabetic patients.
+Among non-medical allergy types, there appears to be a large proportion of diabetic patients with egg and peanut allergies in comparison to the general population.  The number of diabetic patients with egg allergies actually outnumbers non-diabetic patients.  The plot required significant tweaking in order to display in a meaningful way.
 
-```{r echo = FALSE, fig.height = 3.5}
+```{r fig.height = 3}
 
 patientAllergy %>%
   filter(AllergyType != "Medication") %>%
@@ -478,5 +577,9 @@ patientLabs %>%
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
+\pagebreak
+
 ## Approach
-Before I can outline an approach, I need to review the materials on predictive analysis.
+The intent is to use Random Forest, an extension of the Classification and Regression Trees (CART) predictive model.  The data will need to be split into training and test data.  The predictive quality of the model will be evaluated through cross validation.  This model could be compared to a K-means cluster model using Gower distance for the mix of continuous and categorized data.
+
+The dependent variable will be dmIndicator, and the independent variables will be some combination of Age, Gender, BMI, Allergies, Pulse Pressure, Diagnosis category, Hemoglobin levels, Hematocrit levels, Triglyceride levels, and Platelet levels.  The final report will outline the process of how this model is developed, any further data cleaning required, and evaluation.
