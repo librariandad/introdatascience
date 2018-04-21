@@ -8,3 +8,5 @@ This folder contains files for the capstone project
 [milestone_report.Rmd](milestone_report.Rmd) is a report going into more detail as to the progress of the project
 
 [machine_learning.Rmd](machine_learning.Rmd) describes how machine learning may be applied to the project
+
+[project_journal.Rmd](project_journal.Rmd) working file for project
