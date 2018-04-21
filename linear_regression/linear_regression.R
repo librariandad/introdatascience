@@ -17,6 +17,7 @@
 # set the working directory
 # setwd("~/Desktop/Rstatistics")
 # setwd("C:/Users/dataclass/Desktop/Rstatistics")
+setwd("~/Documents/introdatascience/linear_regression")
 
 ##   You might also start by listing the files in your working directory
 
@@ -95,6 +96,7 @@ methods(class = class(sat.mod))[1:9]
 
 confint(sat.mod)
 # hist(residuals(sat.mod))
+hist(residuals(sat.mod))
 
 ## Linear Regression Assumptions
 ## ─────────────────────────────────
@@ -134,12 +136,52 @@ coef(summary(sat.voting.mod))
 ##   per capita (energy) from the percentage of residents living in
 ##   metropolitan areas (metro). Be sure to
 ##   1. Examine/plot the data before fitting the model
+
+sts.mtro.enrg <- subset(states.data, select = c("metro", "energy"))
+summary(sts.mtro.enrg)
+cor(sts.mtro.enrg)
+
+plot(states.data$metro,states.data$energy)
 ##   2. Print and interpret the model `summary'
+EnergyModel = lm(energy ~ metro, data = states.data)
+summary(EnergyModel)
 ##   3. `plot' the model to look for deviations from modeling assumptions
+par(mar = c(4, 4, 2, 2), mfrow = c(1, 2)) #optional
+plot(EnergyModel, which = c(1, 2)) # "which" argument optional
+
+SSE = sum(EnergyModel$residuals^2)
+SSE
+RMSE = sqrt(SSE/nrow(states.data))
+RMSE
+
+# The root mean square error for the first model is 135.
 
 ##   Select one or more additional predictors to add to your model and
 ##   repeat steps 1-3. Is this model significantly better than the model
 ##   with /metro/ as the only predictor?
+EnergyModel2 = lm(energy ~ metro + area, data=states.data)
+summary(EnergyModel2)
+
+
+SSE2 = sum(EnergyModel2$residuals^2)
+SSE2
+RMSE2 = sqrt(SSE2/nrow(states.data))
+RMSE2
+mean(states.data$energy, na.rm=TRUE)
+
+# This model is better.  Area has greater significance than metro.
+# The residual standard error (107) is lower and adjusted R squared is higher (.47).
+# The p-value is much lower (E-07).
+# the root mean square error (RMSE) for model 2 is 102.8
+
+EnergyModel3 = lm(energy ~ metro + area + toxic + green + expense + percent + miles + college, data=states.data)
+summary(EnergyModel3)
+SSE3 = sum(EnergyModel3$residuals^2)
+RMSE3 = sqrt(sum(SSE3/nrow(states.data)))
+SSE3
+RMSE3
+
+# This model is even better.  RSE=56, Adj R-sq = 0.77, p is at E-12, RMSE is 48.
 
 ## Interactions and factors
 ## ══════════════════════════
@@ -205,5 +247,25 @@ coef(summary(lm(csat ~ C(region, contr.helmert),
 ##   1. Add on to the regression equation that you created in exercise 1 by
 ##      generating an interaction term and testing the interaction.
 
+EnergyModel6 = lm(energy ~ metro + area + toxic + density*green, data=states.data)
+summary(EnergyModel6)
+SSE6 = sum(EnergyModel6$residuals^2)
+RMSE6 = sqrt(sum(SSE6/nrow(states.data)))
+SSE6
+RMSE6
+
+# This model is comparable, but with a lower p-value.
+# The Residual standard error is 56, Adj R-sq is .77, p is at E-13, RMSE is 50.1
+
 ##   2. Try adding region to the model. Are there significant differences
 ##      across the four regions?
+
+EnergyModel7 = lm(energy ~ metro + area + toxic + density*green + region, data=states.data)
+summary(EnergyModel7)
+SSE7 = sum(EnergyModel7$residuals^2)
+RMSE7 = sqrt(sum(SSE7/nrow(states.data)))
+SSE7
+RMSE7
+
+# it appears that the southern region is slightly more significant, based on the p-value, but not enough to be 
+# significant to the model overall.
