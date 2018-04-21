@@ -1,14 +1,10 @@
-# introdatascience
+# Capstone Project
+This folder contains files for the capstone project
 
-This is the GitHub repository for my work in the Springboard *Introduction to Data Science* course.
+[capstone_proposal.Rmd](capstone_proposal.Rmd) is the proposal for the project
 
-This repository contains the following folders
+[statistical_analysis_report.Rmd](statistical_analysis_report.Rmd) is a report on the exploratory analysis of the data set
 
-## Assets
-[Assets](Assets) contains files used in the creation of content, such as screenshots, etc.
+[milestone_report.Rmd](milestone_report.Rmd) is a report going into more detail as to the progress of the project
 
-## Capstone
-[Capstone](Capstone) contains files for the capstone project
-
-## Homework
-[Homework](Homework) contains files for course homework
+[machine_learning.Rmd](machine_learning.Rmd) describes how machine learning may be applied to the project
