@@ -2,5 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
+.DS_Store
 compData.db
 db
+introdatascience.Rproj
+iDS_plan_3mo.pod
+testdb

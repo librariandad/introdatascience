@@ -1,0 +1,105 @@
+---
+title: "Figuring out joins"
+author: "Keith Engwall"
+date: "2/7/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+```
+
+```{r}
+
+patient <- read_csv("db/training_patient.csv")
+
+diagnosis <- read_csv("db/training_diagnosis.csv") %>%
+  select(DiagnosisGuid, PatientGuid, ICD9Code, StartYear, StopYear, Acute)
+
+allergy <- read_csv("db/training_allergy.csv") %>%
+  select(AllergyGuid, PatientGuid, AllergyType, AllergyStartYear = StartYear, ReactionName, SeverityName, MedicationNdcCode)
+
+allergy <- transform(allergy, MedicationNdcCode = as.character(MedicationNdcCode))                     
+medication <- read_csv("db/training_medication.csv") %>%
+  select(MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid)
+
+immunization <- read_csv("db/training_immunization.csv") %>%
+  select(ImmunizationGuid, PatientGuid, VaccineName, AdministeredYear, CvxCode)
+
+# read in lab observations joined to include PatientGuid and PanelName
+labs <- left_join(
+  left_join(
+    read_csv("db/training_labResult.csv") %>%
+      select(LabResultGuid,PatientGuid, TranscriptGuid),
+    read_csv("db/training_labPanel.csv") %>%
+      select(LabResultGuid, LabPanelGuid, PanelName),
+    by="LabResultGuid"
+  ),
+  read_csv("db/training_labObservation.csv"),
+  by="LabPanelGuid"
+)  
+
+# read in transcript table
+transcript <- read_csv("db/training_transcript.csv") %>%
+  select(TranscriptGuid, PatientGuid, VisitYear, Height, Weight, BMI, SystolicBP, DiastolicBP, RespiratoryRate, HeartRate, Temperature)
+
+# read in smoke table
+smoke <- read_csv("db/training_smoke.csv") %>%
+  select(PatientGuid, SmokeEffectiveYear, SmokingStatus_Description, SmokingStatus_NISTCode)
+
+#read in join tables
+transDiag <- read_csv("db/training_transcriptDiagnosis.csv")
+transMed <- read_csv("db/training_transcriptMedication.csv")
+transAllergy <- read_csv("db/training_transcriptAllergy.csv")
+
+
+```
+
+```{r message=FALSE}
+diagnosis_med_x <- left_join(diagnosis, medication)
+diagnosis_tj_x <- left_join(diagnosis_med_x, transDiag)
+diagnosis_trans_x <- left_join(diagnosis_tj_x, transcript)
+```
+
+```{r message=FALSE}
+
+medication_tj_x <- left_join(medication, transMed)
+medication_trans_x <- left_join(medication_tj_x, transcript)
+```
+
+```{r message=FALSE}
+dmt <- full_join(medication_trans_x,diagnosis_trans_x) 
+
+allergy_tj_x <- left_join(allergy, transAllergy)
+allergy_trans_x <- left_join(allergy_tj_x, transcript)
+```
+
+```{r}
+admt <- full_join(dmt, allergy_trans_x, by=c("PatientGuid","TranscriptGuid"))
+admt <- admt %>% rename(DMedicationNdcCode = MedicationNdcCode.x, AMedicationNdcCode = MedicationNdcCode.y)
+admt %>% select(PatientGuid, AllergyGuid, DiagnosisGuid, TranscriptGuid, DMedicationNdcCode, AMedicationNdcCode) %>% filter(grepl("038CA2A9", PatientGuid, fixed=TRUE)) %>% arrange(TranscriptGuid, PatientGuid, TranscriptGuid)
+```
+PatientGuid FF1059B3, 0063B34F
+```{r}
+smoke <- smoke %>% mutate(TranscriptGuid = "SMOKE")
+immunization <- immunization %>% mutate(TranscriptGuid = "IMMUNIZATION")
+ls <- full_join(smoke,labs)
+ils <- full_join(immunization, ls)
+ls %>% filter(grepl("038CA2A9", PatientGuid, fixed=TRUE)) %>% arrange(PatientGuid)
+smoke %>% arrange(PatientGuid)
+smoke %>% filter(grepl("038CA2A9", PatientGuid, fixed=TRUE))
+immunization
+labs %>% filter(grepl("038CA2A9", PatientGuid, fixed=TRUE))
+```
+
+```{r}
+ladmt <- full_join(admt,ils) 
+pladmt <- left_join(patient_pop, ladmt) 
+pladmt %>% filter(grepl("FF1059B3", PatientGuid, fixed=TRUE))
+```

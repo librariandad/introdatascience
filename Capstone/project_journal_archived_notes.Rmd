@@ -215,5 +215,3 @@ ggplot(aes(x = 2011 - YearOfBirth, y = BMI, col = factor(dmIndicator))) +
   #  stat_summary(fun.data = mean_sdl, fun.args = list(mult = 1), position = position_dodge(width = 1))
 
 ```
-
-d

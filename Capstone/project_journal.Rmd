@@ -129,6 +129,74 @@ transcript <- transcript %>%
 
 ```
 
+
+For diagnoses, rather than identify each individual diagnosis type, we can
+create categories of diagnoses based on the ICD9 codes
+
+```{r message = FALSE, warning = FALSE}
+
+# create diagCat column in patientDiagnosis containing diagnosis categories corresponding to ranges of ICD9 Codes
+diagnosis$diagCat <-
+  ifelse((as.integer(diagnosis$ICD9Code) < 140), 
+    "Infectious/Parasitic",
+    ifelse((as.integer(diagnosis$ICD9Code) >= 140 &
+      as.integer(diagnosis$ICD9Code) < 240), 
+      "Neoplasms",
+      ifelse((as.integer(diagnosis$ICD9Code) >=240 &
+        as.integer(diagnosis$ICD9Code) < 280),
+          "Endocrine/Nutritional/Metabolic",
+          ifelse((as.integer(diagnosis$ICD9Code) >= 280 &
+            as.integer(diagnosis$ICD9Code) < 290),
+            "Blood",
+            ifelse((as.integer(diagnosis$ICD9Code) >= 290 &
+              as.integer(diagnosis$ICD9Code) < 320),
+              "Mental",
+              ifelse((as.integer(diagnosis$ICD9Code) >= 320 &
+                as.integer(diagnosis$ICD9Code) < 390),
+                "Nervous",
+                ifelse((as.integer(diagnosis$ICD9Code) >= 390 &
+                  as.integer(diagnosis$ICD9Code) < 460),
+                  "Circulatory",
+                  ifelse((as.integer(diagnosis$ICD9Code) >= 460 &
+                    as.integer(diagnosis$ICD9Code) < 520),
+                    "Respiratory",
+                    ifelse((as.integer(diagnosis$ICD9Code) >= 520 &
+                      as.integer(diagnosis$ICD9Code) < 580),
+                      "Digestive",
+  ifelse((as.integer(diagnosis$ICD9Code) >= 580 &
+    as.integer(diagnosis$ICD9Code) < 630), 
+    "Genitourinary",
+    ifelse((as.integer(diagnosis$ICD9Code) >= 630 &
+      as.integer(diagnosis$ICD9Code) < 680), 
+      "Pregnancy",
+      ifelse((as.integer(diagnosis$ICD9Code) >=680 &
+        as.integer(diagnosis$ICD9Code) < 710),
+          "Skin",
+          ifelse((as.integer(diagnosis$ICD9Code) >=710 &
+            as.integer(diagnosis$ICD9Code) < 740),
+            "Musculoskeletal",
+            ifelse((as.integer(diagnosis$ICD9Code) >= 740 &
+              as.integer(diagnosis$ICD9Code) < 760),
+              "Congenital",
+              ifelse((as.integer(diagnosis$ICD9Code) >= 760 &
+                as.integer(diagnosis$ICD9Code) < 780),
+                "Perinatal",
+                ifelse((as.integer(diagnosis$ICD9Code) >= 780 &
+                  as.integer(diagnosis$ICD9Code) < 800),
+                  "Ill Defined", 
+                  ifelse((as.integer(diagnosis$ICD9Code) >= 800),
+                    "Injury/Poisoning", 
+                    "NULL"
+                    )
+                  )
+                )
+            )
+          )
+      )
+    )
+  ))))))))))
+```
+
 ### Prepare data frames
 ```{r message = FALSE}
 # prescription data frame
@@ -153,14 +221,18 @@ labs <- left_join(
 
 # smoking data frame
 smoke <- smoke %>% mutate(TranscriptGuid = "SMOKE")
+```
 
+```{r}
 # master data frame (comprised of all data frames)
 dataJoin <- full_join(presJoin, diagJoin)
-dataJoin <- full_join(dataJoin, allerJoin)
-dataJoin <- full_join(dataJoin, labs)
-dataJoin <- full_join(dataJoin, smoke)
-dataMaster <- left_join(dataJoin, transcript)
+dataJoin2 <- full_join(dataJoin, allerJoin)
+dataJoin3 <- full_join(dataJoin2, labs)
+dataJoin4 <- full_join(dataJoin3, smoke)
+dataMaster <- left_join(dataJoin4, transcript)
+```
 
+```{r}
 # patient data frames (join patient table to each data frame)
 patientPrescription <- left_join(patient, presTran)
 patientDiagnosis <- left_join(patient, diagTran)
@@ -239,72 +311,6 @@ patientLabs$AbnormalFlagsSorted = factor(patientLabs$AbnormalFlags, levels = rev
 
 ```
 
-For diagnoses, rather than identify each individual diagnosis type, we can
-create categories of diagnoses based on the ICD9 codes
-
-```{r message = FALSE, warning = FALSE}
-
-# create diagCat column in patientDiagnosis containing diagnosis categories corresponding to ranges of ICD9 Codes
-patientDiagnosis$diagCat <-
-  ifelse((as.integer(patientDiagnosis$ICD9Code) < 140), 
-    "Infectious/Parasitic",
-    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 140 &
-      as.integer(patientDiagnosis$ICD9Code) < 240), 
-      "Neoplasms",
-      ifelse((as.integer(patientDiagnosis$ICD9Code) >=240 &
-        as.integer(patientDiagnosis$ICD9Code) < 280),
-          "Endocrine/Nutritional/Metabolic",
-          ifelse((as.integer(patientDiagnosis$ICD9Code) >= 280 &
-            as.integer(patientDiagnosis$ICD9Code) < 290),
-            "Blood",
-            ifelse((as.integer(patientDiagnosis$ICD9Code) >= 290 &
-              as.integer(patientDiagnosis$ICD9Code) < 320),
-              "Mental",
-              ifelse((as.integer(patientDiagnosis$ICD9Code) >= 320 &
-                as.integer(patientDiagnosis$ICD9Code) < 390),
-                "Nervous",
-                ifelse((as.integer(patientDiagnosis$ICD9Code) >= 390 &
-                  as.integer(patientDiagnosis$ICD9Code) < 460),
-                  "Circulatory",
-                  ifelse((as.integer(patientDiagnosis$ICD9Code) >= 460 &
-                    as.integer(patientDiagnosis$ICD9Code) < 520),
-                    "Respiratory",
-                    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 520 &
-                      as.integer(patientDiagnosis$ICD9Code) < 580),
-                      "Digestive",
-  ifelse((as.integer(patientDiagnosis$ICD9Code) >= 580 &
-    as.integer(patientDiagnosis$ICD9Code) < 630), 
-    "Genitourinary",
-    ifelse((as.integer(patientDiagnosis$ICD9Code) >= 630 &
-      as.integer(patientDiagnosis$ICD9Code) < 680), 
-      "Pregnancy",
-      ifelse((as.integer(patientDiagnosis$ICD9Code) >=680 &
-        as.integer(patientDiagnosis$ICD9Code) < 710),
-          "Skin",
-          ifelse((as.integer(patientDiagnosis$ICD9Code) >=710 &
-            as.integer(patientDiagnosis$ICD9Code) < 740),
-            "Musculoskeletal",
-            ifelse((as.integer(patientDiagnosis$ICD9Code) >= 740 &
-              as.integer(patientDiagnosis$ICD9Code) < 760),
-              "Congenital",
-              ifelse((as.integer(patientDiagnosis$ICD9Code) >= 760 &
-                as.integer(patientDiagnosis$ICD9Code) < 780),
-                "Perinatal",
-                ifelse((as.integer(patientDiagnosis$ICD9Code) >= 780 &
-                  as.integer(patientDiagnosis$ICD9Code) < 800),
-                  "Ill Defined", 
-                  ifelse((as.integer(patientDiagnosis$ICD9Code) >= 800),
-                    "Injury/Poisoning", 
-                    "NULL"
-                    )
-                  )
-                )
-            )
-          )
-      )
-    )
-  ))))))))))
-```
 
 ```{r}
 patientTranscript <- patientTranscript %>%
@@ -354,7 +360,7 @@ patientAllergy %>%
   ggplot(aes(x=AllergyType, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
   geom_bar(position="dodge") +
   labs(title = "Incidence of Allergies", fill = "Diabetes Status") +
-  theme(plot.margin = margin(0,0,0,2,"cm"), axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
 
 patientAllergy %>%
   filter(AllergyType == "Egg") %>%
@@ -650,3 +656,440 @@ topDiabeticPrescriptions %>%
         plot.margin = margin(0,0,0,7,"cm"),
         plot.title = element_text(hjust = 0.5))
 ```
+
+
+```{r}
+patientFrame$AllergyType <- as.factor(patientFrame$AllergyType)
+patientFrame$age <- as.integer(patientFrame$age)
+patientFrame$Gender <- as.factor(patientFrame$Gender)
+patientFrame$diagCat <- as.factor(patientFrame$diagCat)
+```
+
+```{r}
+platelets <- labObservation %>%
+  filter(HL7Text == "Platelets") %>%
+  select(LabPanelGuid, platelets = ObservationValue)
+```
+
+```{r}
+hemoglobin <- labObservation %>%
+  filter(HL7Text == "Hemoglobin") %>%
+  select(LabPanelGuid, hemoglobin = ObservationValue)
+```
+
+```{r}
+hematocrit <- labObservation %>%
+  filter(HL7Text == "Hematocrit") %>%
+  select(LabPanelGuid, hematocrit = ObservationValue)
+```
+
+```{r}
+triglyceride <- labObservation %>%
+  filter(HL7Text == "Triglyceride") %>%
+  select(LabPanelGuid, triglyceride = ObservationValue)
+```
+
+```{r}
+labFrame <- full_join(hemoglobin, full_join(triglyceride, full_join(hematocrit, platelets)))
+```
+
+```{r}
+panels <- right_join(labPanel,labFrame)
+```
+
+```{r}
+results <- right_join(labResult,panels)
+```
+
+```{r}
+allergyFrame <- left_join(
+  allergy %>% filter(AllergyType != "Medication") %>% select(AllergyGuid,PatientGuid,AllergyType),
+  transAllergy
+  )
+```
+
+```{r}
+allergyFrame <- left_join(
+  allergyFrame,
+  transcript %>% select(TranscriptGuid,PatientGuid)
+  )
+```
+
+
+
+```{r}
+patientFrame = NULL
+patientFrame <- left_join(
+  patient %>% select(PatientGuid, dmIndicator, Gender, YearOfBirth),
+  allergyFrame %>% select(PatientGuid, TranscriptGuid, AllergyType)
+)
+```
+
+```{r}
+diagnosisFrame <- diagnosis %>%
+  select(DiagnosisGuid, PatientGuid, ICD9Code, diagCat)
+```
+
+```{r}
+diagnosisFrame <- left_join(
+  diagnosisFrame, transDiag
+)
+```
+
+```{r}
+diagnosisFrame <- left_join(
+  diagnosisFrame, transcript %>% select(TranscriptGuid, PatientGuid)
+)
+```
+
+```{r}
+diagnosisFrame <- diagnosisFrame %>%
+  select(-TranscriptDiagnosisGuid)
+```
+
+```{r}
+patientFrame2 <- left_join(patientFrame, diagnosisFrame)
+```
+
+```{r}
+patientFrame3 <- full_join(
+  patientFrame2, results
+)
+```
+
+
+```{r}
+transcriptFrame <- transcript %>%
+  select(TranscriptGuid, PatientGuid, BMI, SystolicBP, DiastolicBP)
+```
+
+```{r}
+# change transcript Height & Weight to numeric types
+transcriptFrame <- transform(transcriptFrame, SystolicBP = as.numeric(SystolicBP), DiastolicBP = as.numeric(DiastolicBP))
+```
+
+```{r}
+# add pulsePressure column to transcript (SystolicBP - DiastolicBP)
+transcriptFrame <- transcriptFrame %>%
+  filter(BMI > 0 | (!is.na(SystolicBP) & !is.na(DiastolicBP)))
+```
+
+  filter(!is.na(SystolicBP)) %>% filter(!is.na(DiastolicBP)) %>% filter(SystolicBP > 0 & DiastolicBP > 0) %>%
+  mutate(pulsePressure = SystolicBP - DiastolicBP)
+
+```{r}
+transcriptFrame[,4:5][is.na(transcriptFrame[,4:5])] <- 0
+```
+
+```{r}
+transcriptFrame <- transcriptFrame %>% mutate(pulsePressure = SystolicBP - DiastolicBP)
+```
+
+```{r}
+transcriptFrame <- transcriptFrame %>%
+  select(-SystolicBP, -DiastolicBP) %>%
+  filter(BMI > 0 | pulsePressure > 0)
+```
+
+```{r}
+patientFrame4 <- left_join(patientFrame3,transcriptFrame)
+```
+
+```{r}
+patientFrame4 <- patientFrame4 %>%
+  select(-LabResultGuid,-LabPanelGuid, -PanelName)
+```
+
+```{r}
+patientFrame4 <- patientFrame4 %>% mutate(age = 2010 - YearOfBirth) %>% select(-YearOfBirth)
+```
+
+
+```{r}
+patientFrame4 <- patientFrame4 %>%
+  select(-TranscriptGuid, -DiagnosisGuid)
+```
+
+```{r}
+patientFrame4$Gender <- as.factor(patientFrame4$Gender)
+patientFrame4$AllergyType <- as.factor(patientFrame4$AllergyType)
+patientFrame4$diagCat <- as.factor(patientFrame4$diagCat)
+```
+
+```{r}
+library(caTools)
+patientSplit = sample.split(patientFrame4$dmIndicator, SplitRatio = 0.7)
+patientTrain = subset(patientFrame4, patientSplit == TRUE)
+patientTest = subset(patientFrame4, patientSplit == FALSE)
+```
+
+```{r}
+library(randomForest)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(ROCR)
+library(caret)
+library(e1071)
+```
+
+```{r}
+patientTrain$dmIndicator = as.factor(patientTrain$dmIndicator)
+patientTest$dmIndicator = as.factor(patientTest$dmIndicator)
+patientFrame4$dmIndicator = as.factor(patientFrame4$dmIndicator)
+```
+
+```{r}
+patientForest = randomForest(dmIndicator ~ Gender + AllergyType + diagCat + age, data = patientTrain, nodesize=25, ntree=200, na.action = na.include)
+```
+
+```{r}
+predictForest = predict(patientForest, newdata = patientTest)
+```
+
+```{r}
+table(patientTest$dmIndicator, predictForest)
+```
+
+```{r warning = FALSE, message = FALSE}
+# read patient table into data frame.
+test_patient <- read_csv("testdb/test_patient.csv") %>%
+  select(-PracticeGuid)
+# read diagnosis table into data frame.  
+test_diagnosis <- read_csv("testdb/test_diagnosis.csv") %>%
+  select(DiagnosisGuid, DiagnosisDescription, PatientGuid, ICD9Code, StartYear, StopYear, Acute)
+# read allergy table into data frame. Change column name of MedicationNdcCode to AllergyMedicationNdcCode to diambiguate between medication allergies and prescriptions.
+test_allergy <- read_csv("testdb/test_allergy.csv") %>%
+  select(AllergyGuid, PatientGuid, AllergyType, AllergyStartYear = StartYear, ReactionName, SeverityName, AllergyMedicationNdcCode = MedicationNDCCode)
+# read prescription table into data frame.
+test_prescription <- read_csv("testdb/test_prescription.csv") %>%
+  select(PrescriptionGuid, PatientGuid, MedicationGuid, PrescriptionYear, Quantity, GenericAllowed)
+# read medication table into data frame.
+test_medication <- read_csv("testdb/test_medication.csv") %>%
+  select(MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid)
+# read lab tables into data frames.
+test_labResult <- read_csv("testdb/test_labResult.csv") %>%
+  select(LabResultGuid,PatientGuid, TranscriptGuid)
+
+test_labPanel <- read_csv("testdb/test_labPanel.csv") %>%
+  select(LabResultGuid, LabPanelGuid, PanelName)
+
+test_labObservation <- read_csv("testdb/test_labObservation.csv")
+# read transcript table into data frame.
+test_transcript <- read_csv("testdb/test_transcript.csv") %>%
+  select(TranscriptGuid, PatientGuid, VisitYear, Height, Weight, BMI, SystolicBP, DiastolicBP, RespiratoryRate, HeartRate, Temperature)
+#read join tables into data frames.
+test_transDiag <- read_csv("testdb/test_transcriptDiagnosis.csv")
+test_transMed <- read_csv("testdb/test_transcriptMedication.csv")
+test_transAllergy <- read_csv("testdb/test_transcriptAllergy.csv")
+
+```
+
+```{r warning = FALSE, message = FALSE}
+# add age column to patient data frame: derived from subtracting 2010, the median year of the patient data (range: 2009 - 2012)
+test_patient <- test_patient %>% mutate(age = 2010 - YearOfBirth)
+
+# change transcript Height & Weight to numeric types
+test_transcript <- transform(test_transcript, Height = as.numeric(Height), Weight = as.numeric(Weight), Temperature = as.numeric(Temperature), RespiratoryRate = as.numeric(RespiratoryRate), HeartRate = as.numeric(HeartRate), SystolicBP = as.numeric(SystolicBP), DiastolicBP = as.numeric(DiastolicBP))
+  
+# add pulsePressure column to transcript (SystolicBP - DiastolicBP)
+test_transcript <- test_transcript %>%
+  filter(!is.na(SystolicBP)) %>% filter(!is.na(DiastolicBP)) %>% filter(SystolicBP > 0 & DiastolicBP > 0) %>%
+  mutate(pulsePressure = SystolicBP - DiastolicBP)
+```
+
+```{r warning = FALSE, message = FALSE}
+# create diagCat column in test_diagnosis containing iagnosis categories corresponding to ranges of ICD9 Codes
+test_diagnosis$diagCat <-
+  ifelse((as.integer(test_diagnosis$ICD9Code) < 140), 
+    "Infectious/Parasitic",
+    ifelse((as.integer(test_diagnosis$ICD9Code) >= 140 &
+      as.integer(test_diagnosis$ICD9Code) < 240), 
+      "Neoplasms",
+      ifelse((as.integer(test_diagnosis$ICD9Code) >=240 &
+        as.integer(test_diagnosis$ICD9Code) < 280),
+          "Endocrine/Nutritional/Metabolic",
+          ifelse((as.integer(test_diagnosis$ICD9Code) >= 280 &
+            as.integer(test_diagnosis$ICD9Code) < 290),
+            "Blood",
+            ifelse((as.integer(test_diagnosis$ICD9Code) >= 290 &
+              as.integer(test_diagnosis$ICD9Code) < 320),
+              "Mental",
+              ifelse((as.integer(test_diagnosis$ICD9Code) >= 320 &
+                as.integer(test_diagnosis$ICD9Code) < 390),
+                "Nervous",
+                ifelse((as.integer(test_diagnosis$ICD9Code) >= 390 &
+                  as.integer(test_diagnosis$ICD9Code) < 460),
+                  "Circulatory",
+                  ifelse((as.integer(test_diagnosis$ICD9Code) >= 460 &
+                    as.integer(test_diagnosis$ICD9Code) < 520),
+                    "Respiratory",
+                    ifelse((as.integer(test_diagnosis$ICD9Code) >= 520 &
+                      as.integer(test_diagnosis$ICD9Code) < 580),
+                      "Digestive",
+  ifelse((as.integer(test_diagnosis$ICD9Code) >= 580 &
+    as.integer(test_diagnosis$ICD9Code) < 630), 
+    "Genitourinary",
+    ifelse((as.integer(test_diagnosis$ICD9Code) >= 630 &
+      as.integer(test_diagnosis$ICD9Code) < 680), 
+      "Pregnancy",
+      ifelse((as.integer(test_diagnosis$ICD9Code) >=680 &
+        as.integer(test_diagnosis$ICD9Code) < 710),
+          "Skin",
+          ifelse((as.integer(test_diagnosis$ICD9Code) >=710 &
+            as.integer(test_diagnosis$ICD9Code) < 740),
+            "Musculoskeletal",
+            ifelse((as.integer(test_diagnosis$ICD9Code) >= 740 &
+              as.integer(test_diagnosis$ICD9Code) < 760),
+              "Congenital",
+              ifelse((as.integer(test_diagnosis$ICD9Code) >= 760 &
+                as.integer(test_diagnosis$ICD9Code) < 780),
+                "Perinatal",
+                ifelse((as.integer(test_diagnosis$ICD9Code) >= 780 &
+                  as.integer(test_diagnosis$ICD9Code) < 800),
+                  "Ill Defined", 
+                  ifelse((as.integer(test_diagnosis$ICD9Code) >= 800),
+                    "Injury/Poisoning", 
+                    "NULL"
+                    )
+                  )
+                )
+            )
+          )
+      )
+    )
+  ))))))))))
+```
+
+```{r}
+# diagnosis data frame
+test_diagJoin <- left_join(test_diagnosis, test_transDiag) %>% select(-TranscriptDiagnosisGuid)
+test_diagTran <- left_join(test_diagJoin, test_transcript)
+# allergy data frame
+test_allerJoin <- left_join(test_allergy, test_transAllergy) %>% select(-TranscriptAllergyGuid)
+test_allerTran <- left_join(test_allerJoin, test_transcript)
+```
+
+```{r}
+test_allergyFrame <- left_join(
+  test_allergy %>% filter(AllergyType != "Medication") %>% select(AllergyGuid,PatientGuid,AllergyType),
+  test_transAllergy
+  ) %>% select(-TranscriptAllergyGuid)
+```
+
+```{r}
+test_allergyFrame <- left_join(
+  test_allergyFrame,
+  test_transcript %>% select(TranscriptGuid,PatientGuid)
+  )
+```
+
+
+
+```{r}
+test_patientFrame = NULL
+test_patientFrame <- left_join(
+  test_patient %>% select(PatientGuid, Gender, YearOfBirth),
+  test_allergyFrame %>% select(PatientGuid, TranscriptGuid, AllergyType)
+)
+```
+
+```{r}
+test_diagnosisFrame <- test_diagnosis %>%
+  select(DiagnosisGuid, PatientGuid, ICD9Code, diagCat)
+```
+
+```{r}
+diagnosisFrame <- left_join(
+  diagnosisFrame, transDiag
+)
+```
+
+```{r}
+diagnosisFrame <- left_join(
+  diagnosisFrame, transcript %>% select(TranscriptGuid, PatientGuid)
+)
+```
+
+```{r}
+diagnosisFrame <- diagnosisFrame %>%
+  select(-TranscriptDiagnosisGuid)
+```
+
+```{r}
+patientFrame2 <- left_join(patientFrame, diagnosisFrame)
+```
+
+```{r}
+patientFrame3 <- full_join(
+  patientFrame2, results
+)
+```
+
+
+```{r}
+transcriptFrame <- transcript %>%
+  select(TranscriptGuid, PatientGuid, BMI, SystolicBP, DiastolicBP)
+```
+
+```{r}
+# change transcript Height & Weight to numeric types
+transcriptFrame <- transform(transcriptFrame, SystolicBP = as.numeric(SystolicBP), DiastolicBP = as.numeric(DiastolicBP))
+```
+
+```{r}
+# add pulsePressure column to transcript (SystolicBP - DiastolicBP)
+transcriptFrame <- transcriptFrame %>%
+  filter(BMI > 0 | (!is.na(SystolicBP) & !is.na(DiastolicBP)))
+```
+
+  filter(!is.na(SystolicBP)) %>% filter(!is.na(DiastolicBP)) %>% filter(SystolicBP > 0 & DiastolicBP > 0) %>%
+  mutate(pulsePressure = SystolicBP - DiastolicBP)
+
+```{r}
+transcriptFrame[,4:5][is.na(transcriptFrame[,4:5])] <- 0
+```
+
+```{r}
+transcriptFrame <- transcriptFrame %>% mutate(pulsePressure = SystolicBP - DiastolicBP)
+```
+
+```{r}
+transcriptFrame <- transcriptFrame %>%
+  select(-SystolicBP, -DiastolicBP) %>%
+  filter(BMI > 0 | pulsePressure > 0)
+```
+
+```{r}
+patientFrame4 <- left_join(patientFrame3,transcriptFrame)
+```
+
+```{r}
+patientFrame4 <- patientFrame4 %>%
+  select(-LabResultGuid,-LabPanelGuid, -PanelName)
+```
+
+```{r}
+patientFrame4 <- patientFrame4 %>% mutate(age = 2010 - YearOfBirth) %>% select(-YearOfBirth)
+```
+
+
+```{r}
+patientFrame4 <- patientFrame4 %>%
+  select(-TranscriptGuid, -DiagnosisGuid)
+```
+
+```{r}
+patientFrame4$Gender <- as.factor(patientFrame4$Gender)
+patientFrame4$AllergyType <- as.factor(patientFrame4$AllergyType)
+patientFrame4$diagCat <- as.factor(patientFrame4$diagCat)
+```
+
+
+
+```{r}
+dmIdentify <- left_join(patient,diagnosis)
+dmIdentify %>% filter(dmIndicator == 1) %>% group_by(ICD9Code) %>% summarise(n = n()) %>% ungroup() %>% arrange(ICD9Code)
+```
+
+
