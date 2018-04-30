@@ -357,6 +357,7 @@ patientAllergy %>%
   ggplot(aes(x=AllergyType, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
   geom_bar(position="dodge") +
   labs(title = "Incidence of Allergies", fill = "Diabetes Status") +
+  scale_x_discrete(label=function(x) abbreviate(x, minlength=10)) +
   theme(axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
 
 patientAllergy %>%
@@ -724,7 +725,7 @@ tr_control = trainControl(method = "repeatedcv", number = 10, repeats = 1)
 cvModel <- train(
   dmIndicator ~ age + Gender + hematocrit + hemoglobin + platelets, data = labData, method = "rf", trControl = tr_control
 )
-cvModel
+cvModel$
 ```
 
 #### Diagnosis Data
@@ -824,34 +825,6 @@ diagAgg <- diagCat %>%
     Pregnant = as.logical(max(Pregnant)),
     Resp = as.logical(max(Resp)),
     Skin = as.logical(max(Skin))
-  ) %>% transform(
-    PatientGuid = as.character(PatientGuid)
-  )
-```
-
-```{r}
-diagAgg2 <- diagCat %>%
-  group_by(PatientGuid, dmIndicator, age, Gender) %>%
-  summarise(
-    Blood = as.logical(max(Blood)),
-    Circulatory = as.logical(max(Circulatory)),
-    Congenital = as.logical(max(Congenital)),
-    Digestive = as.logical(max(Digestive)),
-    Endo = as.logical(max(Endo)),
-    Genit = as.logical(max(Genit)),
-    IllDef = as.logical(max(IllDef)),
-    Infect = as.logical(max(Infect)),
-    Injury = as.logical(max(Injury)),
-    Mental = as.logical(max(Mental)),
-    Musc = as.logical(max(Musc)),
-    Cancer = as.logical(max(Cancer)),
-    Nervous = as.logical(max(Nervous)),
-    Perinatal = as.logical(max(Perinatal)),
-    Pregnant = as.logical(max(Pregnant)),
-    Resp = as.logical(max(Resp)),
-    Skin = as.logical(max(Skin)),
-    BMI = mean(BMI),
-    pulsePressure = mean(pulsePressure)
   ) %>% transform(
     PatientGuid = as.character(PatientGuid)
   )
