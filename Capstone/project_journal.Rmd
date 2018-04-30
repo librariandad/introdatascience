@@ -328,12 +328,7 @@ patient %>% distinct(PatientGuid, .keep_all = TRUE) %>% group_by(age)
 It appears that the central tendency for Age is higher in the diabetic population than in the non-diabetic population
 
 ```{r}
-#ggplot(patient, aes(x = diabetesStatus, y = age)) +
-#  geom_boxplot()
-
 boxplot(age~diabetesStatus,data=patient, outline = FALSE, main = "Patient Age", ylab = "Age (yr)", xlab = "Diabetes Status")
-
-boxplot(patientAge~diabetesStatus, data=patientTranscript, outline = FALSE)
 ```
 
 \pagebreak
@@ -702,6 +697,54 @@ results <- right_join(labResult,panels)
 ```
 
 ```{r}
+resultsAgg <- aggregate(results[c("hemoglobin","hematocrit","triglyceride","platelets")],by=list(PatientGuid = results$PatientGuid, LabPanelGuid = results$LabPanelGuid), mean)
+```
+
+```{r}
+transSubset <- transcript %>% select (TranscriptGuid, PatientGuid, BMI, pulsePressure) %>% filter(BMI > 10 & BMI < 60 & pulsePressure > 20 & pulsePressure < 100)
+```
+
+```{r}
+library(mice)
+```
+
+```{r}
+resultsImputed = complete(mice(resultsAgg))
+```
+
+```{r}
+transResImp <- right_join(transSubset, resultsImputed)
+```
+
+```{r}
+patientCont <- right_join(patient, transResImp)
+```
+```{r}
+patientContSplit = sample.split(patientCont$dmIndicator, SplitRatio = 0.7)
+patientContTrain = subset(patientCont, patientContSplit == TRUE)
+patientContTest = subset(patientCont, patientContSplit == FALSE)
+```
+
+```{r}
+patientLog = glm(dmIndicator ~ triglyceride + hemoglobin + BMI + platelets + hematocrit + pulsePressure, data = patientContTrain, family=binomial)
+```
+
+```{r}
+predictTest <- predict(patientLog, type = "response", newdata = patientContTest)
+table(patientContTest$dmIndicator, predictTest > 0.5)
+```
+
+```{r}
+library(ROCR)
+```
+
+```{r}
+ROCRpred = prediction(predictTest, patientContTest$dmIndicator)
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+
+```{r}
 allergyFrame <- left_join(
   allergy %>% filter(AllergyType != "Medication") %>% select(AllergyGuid,PatientGuid,AllergyType),
   transAllergy
@@ -752,11 +795,19 @@ patientFrame2 <- left_join(patientFrame, diagnosisFrame)
 ```
 
 ```{r}
-patientFrame3 <- full_join(
-  patientFrame2, results
-)
+patientFrame3a <- inner_join(
+  patient, results
+) %>% select(PatientGuid, hemoglobin, triglyceride, hematocrit, platelets)
 ```
 
+```{r}
+patientFrame3b <- full_join(patientFrame2, patientFrame3a)
+```
+
+
+```{r}
+transcriptImputed <- complete(mice(transcript))
+```
 
 ```{r}
 transcriptFrame <- transcript %>%
@@ -792,18 +843,8 @@ transcriptFrame <- transcriptFrame %>%
 ```
 
 ```{r}
-patientFrame4 <- left_join(patientFrame3,transcriptFrame)
+patientFrame4 <- left_join(patientFrame3b,transcriptFrame)
 ```
-
-```{r}
-patientFrame4 <- patientFrame4 %>%
-  select(-LabResultGuid,-LabPanelGuid, -PanelName)
-```
-
-```{r}
-patientFrame4 <- patientFrame4 %>% mutate(age = 2010 - YearOfBirth) %>% select(-YearOfBirth)
-```
-
 
 ```{r}
 patientFrame4 <- patientFrame4 %>%
@@ -811,16 +852,25 @@ patientFrame4 <- patientFrame4 %>%
 ```
 
 ```{r}
-patientFrame4$Gender <- as.factor(patientFrame4$Gender)
-patientFrame4$AllergyType <- as.factor(patientFrame4$AllergyType)
-patientFrame4$diagCat <- as.factor(patientFrame4$diagCat)
+patientFrame2 <- patientFrame2 %>% mutate(age = 2010 - YearOfBirth) %>% select(-YearOfBirth)
+```
+
+
+```{r}
+patientFrame2$Gender <- as.factor(patientFrame2$Gender)
+patientFrame2$AllergyType <- as.factor(patientFrame2$AllergyType)
+patientFrame2$diagCat <- as.factor(patientFrame2$diagCat)
+```
+
+```{r}
+patientFrame2 <- patientFrame2 %>% filter (!is.na(dmIndicator))
 ```
 
 ```{r}
 library(caTools)
-patientSplit = sample.split(patientFrame4$dmIndicator, SplitRatio = 0.7)
-patientTrain = subset(patientFrame4, patientSplit == TRUE)
-patientTest = subset(patientFrame4, patientSplit == FALSE)
+patientSplit = sample.split(patientFrame2$dmIndicator, SplitRatio = 0.7)
+patientTrain = subset(patientFrame2, patientSplit == TRUE)
+patientTest = subset(patientFrame2, patientSplit == FALSE)
 ```
 
 ```{r}
@@ -840,7 +890,7 @@ patientFrame4$dmIndicator = as.factor(patientFrame4$dmIndicator)
 ```
 
 ```{r}
-patientForest = randomForest(dmIndicator ~ Gender + AllergyType + diagCat + age, data = patientTrain, nodesize=25, ntree=200, na.action = na.include)
+patientForest = randomForest(dmIndicator ~ Gender + age + AllergyType, data = patientTrain, nodesize=25, ntree=500, na.action = na.omit, importance=TRUE, do.trace=100)
 ```
 
 ```{r}
@@ -850,6 +900,52 @@ predictForest = predict(patientForest, newdata = patientTest)
 ```{r}
 table(patientTest$dmIndicator, predictForest)
 ```
+
+
+```{r}
+patientImpute <- rfImpute(dmIndicator ~ ., patientTrain %>% select(-ICD9Code, -PatientGuid, -TranscriptGuid, -DiagnosisGuid))
+```
+
+```{r}
+testImpute <- rfImpute(dmIndicator ~ ., patientTest %>% select(-ICD9Code, -PatientGuid, -hemoglobin, -triglyceride, -hematocrit, -platelets))
+```
+
+```{r}
+patientForest2 = randomForest(dmIndicator ~ Gender + AllergyType + diagCat + age, data = patientImpute, nodesize=25, ntree=200, na.action = na.include)
+```
+
+```{r}
+predictForest2 = predict(patientForest2, newdata = patientTest)
+```
+
+```{r}
+table(patientTest$dmIndicator, predictForest2)
+```
+
+
+```{r}
+patientLog = glm(dmIndicator ~ triglyceride, data = patientTrain, family=binomial)
+```
+
+```{r}
+patientRpart = rpart(dmIndicator ~ Gender + AllergyType + age + diagCat, data = patientTrain, method = "class", control = rpart.control(minbucket = 25), na.action = na.omit)
+```
+
+```{r}
+summary(patientRpart)
+prp(patientRpart)
+```
+
+```{r}
+predictCART = predict(patientRpart, newdata = patientTest, type = "class")
+```
+
+```{r}
+table(patientTest$dmIndicator, predictCART)
+```
+
+
+
 
 ```{r warning = FALSE, message = FALSE}
 # read patient table into data frame.
@@ -1093,3 +1189,182 @@ dmIdentify %>% filter(dmIndicator == 1) %>% group_by(ICD9Code) %>% summarise(n =
 ```
 
 
+
+
+
+
+
+
+
+
+#### Transcript Data
+Since the most of the data can be joined to rows in the transcript table, it will be prepared first by selecting the desired variables and eliminating outliers.
+
+```{r}
+transcriptFrame <- transcript %>% select(TranscriptGuid, PatientGuid, BMI, pulsePressure) %>% filter(BMI > 5 & BMI < 100 & pulsePressure > 20)
+```
+
+#### Allergy Data
+The Allergy Data needs to be joined with the transcript data, so that it can be condensed with other data attached to the same transcripts.  Because the "Medication" Allergy Type is a subset consisting of many different medication allergies, none of which appeared to be disproportionate among the diabetic population, it will be excluded from the model.
+
+```{r}
+allergyFrame <- left_join(
+  left_join(
+    allergy %>% filter(AllergyType != "Medication") %>% select(AllergyGuid,PatientGuid,AllergyType),
+    transAllergy
+    ),
+  transcriptFrame
+  )
+```
+
+#### Diagnosis categories
+The diagnosis categories, as factors, are joined to transcript data.
+
+```{r}
+diagnosisFrame <- left_join(
+  left_join(
+    diagnosis %>% select(DiagnosisGuid,PatientGuid,diagCat) %>% transform(diagCat = as.factor(diagCat)),
+    transDiag %>% select(-TranscriptDiagnosisGuid)
+  ),
+  transcriptFrame
+)
+```
+
+#### Prescription Data
+The prescription data is linked to medication, which is in turn linked to diagnoses as well as to transcripts.
+
+```{r}
+prescriptionFrame <- left_join(
+  left_join(
+    left_join(
+      inner_join(
+        prescription %>% select(PrescriptionGuid,PatientGuid,MedicationGuid),
+        diagnosis %>% select(DiagnosisGuid,PatientGuid,diagCat) %>% transform(diagCat = as.factor(diagCat))),
+      medication %>% select(MedicationGuid, PatientGuid, MedicationNdcCode, DiagnosisGuid, MedicationName)
+      ),
+    transMed %>% select(TranscriptGuid, MedicationGuid)
+    ),
+  transcriptFrame
+) %>% select (-PrescriptionGuid, -MedicationGuid)
+
+```
+
+#### Lab Data
+
+```{r}
+platelets <- labObservation %>%
+  filter(HL7Text == "Platelets") %>%
+  select(LabPanelGuid, platelets = ObservationValue)
+
+hemoglobin <- labObservation %>%
+  filter(HL7Text == "Hemoglobin") %>%
+  select(LabPanelGuid, hemoglobin = ObservationValue)
+
+hematocrit <- labObservation %>%
+  filter(HL7Text == "Hematocrit") %>%
+  select(LabPanelGuid, hematocrit = ObservationValue)
+
+triglyceride <- labObservation %>%
+  filter(HL7Text == "Triglyceride") %>%
+  select(LabPanelGuid, triglyceride = ObservationValue)
+
+labFrame <- left_join()
+  
+  full_join(hemoglobin, full_join(triglyceride, full_join(hematocrit, platelets)))
+```
+
+```{r}
+labObs <- labObservation %>% transform(HL7Identifier = as.factor(HL7Identifier))
+```
+
+```{r}
+labObs <- labObs %>% 
+  spread(HL7Identifier, ObservationValue)
+```
+
+```{r}
+labAgg <- labObs %>% select(-LabObservationGuid, -HL7CodingSystem, -Units, -ReferenceRange, -HL7Text, -AbnormalFlags, -ResultStatus, -ObservationYear, -UserGuid, -IsAbnormalValue) %>% group_by(LabPanelGuid) %>% summarise_all(funs(mean), na.rm = TRUE) %>% arrange(LabPanelGuid)
+```
+
+```{r}
+labImpute = complete(mice(labAgg))
+```
+
+
+```{r}
+labObs %>% select(-LabObservationGuid, -HL7CodingSystem, -Units, -ReferenceRange, -HL7Text, -AbnormalFlags, -ResultStatus, -ObservationYear, -UserGuid, -IsAbnormalValue) %>% group_by(LabPanelGuid) %>% arrange(LabPanelGuid)
+```
+
+```{r}
+resultsFrame <- left_join(
+  left_join(
+    labResult,
+    labPanel %>% select (-PanelName)
+  ),
+  labImpute %>% select(LabPanelGuid, Hemoglobin = `005041`,Hematocrit = `005058`,Triglyceride = `2571-8`,Platelets = `015172`)
+)
+```
+
+```{r}
+resultsFrame <- na.omit(resultsFrame)
+```
+
+```{r}
+labTrain <- inner_join(
+  patientTrain,
+  resultsFrame
+)
+
+labTest <- inner_join(
+  patientTest,
+  resultsFrame
+)
+```
+
+```{r}
+labLog = glm(dmIndicator ~ Hemoglobin, data = labTrain, family = binomial)
+
+labPredict = predict(labLog, type = "response", newdata = labTest)
+table(labTest$dmIndicator, labPredict > 0.5)
+```
+
+### Model Selection
+
+
+
+
+
+### Training Set vs Test Set
+The dependent variable for all models will be the dmIndicator field in the patient data frame.  Therefore, the patient data frame will be split into a training data frame and test data frame.  Each of these will then be joined with other data frames to gather the data for the patients in each set, respectively.
+
+```{r}
+set.seed(1234)
+patientSplit = sample.split(patient$dmIndicator, SplitRatio = 0.7)
+patientTrain = subset(patient, patientSplit == TRUE)
+patientTest = subset(patient, patientSplit == FALSE)
+```
+
+
+
+
+
+```{r}
+diagLog = glm(dmIndicator ~ ., data = diagTrain %>% select(-PatientGuid), family=binomial)
+summary(diagLog)
+```
+
+
+```{r}
+diagPred <- predict(diagLog, type = "response", newdata = diagTest)
+diagROCRlog = prediction(diagPred, diagTest$dmIndicator)
+diagRoclog.perf = performance(diagROCRlog, measure = "tpr", x.measure = "fpr")
+plot(diagRoclog.perf, colorize=TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+as.numeric(performance(diagROCRlog, "auc")@y.values)
+```
+
+```{r}
+table(diagTest$dmIndicator, diagPred > 0.3)
+```

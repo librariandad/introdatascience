@@ -1,0 +1,1055 @@
+---
+title: "Project Journal - Clean"
+author: "Keith Engwall"
+date: "4/23/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir="~/Documents/introdatascience")
+```
+
+## Project Objectives
+Create a predictive model for identifying patients with Diabetes
+
+See [Capstone Proposal](https://github.com/librariandad/introdatascience/blob/master/capstone_proposal.Rmd) for details.
+
+## Project Questions
+
+Does there tend to be a difference in age between diabetic patients and non-diabetic patients?
+
+Is either gender more prone to diabetes?
+
+Are there allergy types that correlate with diabetes?
+
+Are there diagnosis categories that correlate with diabetes?
+
+Are there medications that correlate with diabetes?
+
+Are there characteristics (weight, blood pressure, lab results) that are significantly different in the diabetic population than in non-diabetics?
+
+Is there any correlation between diabetes and smoking?
+
+
+## Project Dataset
+Practice Fusion De-Identified Data Set containing EHR data for approximately 10,000 de-identified patients, including data points for diagnoses, medication, transcript data, and lab observations.  See the [Data Dictionary](https://github.com/librariandad/introdatascience/blob/master/PracticeFusionDataSetDictionary.pdf) for details.
+
+
+## Project Notes
+
+### Load R Packages
+The following packages are needed to work on the project.
+
+Note that dbplyr is required to make database connections using dplyr functions.
+```{r include = false}
+library(tidyr)
+library(dplyr)
+library(dbplyr)
+library(readr)
+library(ggplot2)
+library(Hmisc)
+library(caTools)
+library(mice)
+library(ROCR)
+library(ISLR)
+library(boot)
+library(caret)
+library(randomForest)
+```
+
+### Load Data from csv files
+
+Read the data files into R.  Use select statements to pre-filter the desired columns.
+
+```{r message = FALSE, warning = FALSE}
+
+# read patient table into data frame.
+patient <- read_csv("db/training_patient.csv") %>%
+  select(-PracticeGuid)
+
+# read diagnosis table into data frame.  
+diagnosis <- read_csv("db/training_diagnosis.csv") %>%
+  select(DiagnosisGuid, DiagnosisDescription, PatientGuid, ICD9Code, StartYear, StopYear, Acute)
+
+# read allergy table into data frame. Change column name of MedicationNdcCode to AllergyMedicationNdcCode to diambiguate between medication allergies and prescriptions.
+allergy <- read_csv("db/training_allergy.csv") %>%
+  select(AllergyGuid, PatientGuid, AllergyType, AllergyStartYear = StartYear, ReactionName, SeverityName, AllergyMedicationNdcCode = MedicationNdcCode)
+
+# read medication table into data frame.
+medication <- read_csv("db/training_medication.csv") %>%
+  select(MedicationGuid, PatientGuid, MedicationNdcCode, MedicationName, MedicationStrength, Schedule, DiagnosisGuid)
+
+# read prescription table into data frame.
+prescription <- read_csv("db/training_prescription.csv") %>%
+  select(PrescriptionGuid, PatientGuid, MedicationGuid, PrescriptionYear, Quantity, GenericAllowed)
+
+# read immunization table into data frame.
+immunization <- read_csv("db/training_immunization.csv") %>%
+  select(ImmunizationGuid, PatientGuid, VaccineName, AdministeredYear, CvxCode)
+
+# read lab tables into data frames.
+labResult <- read_csv("db/training_labResult.csv") %>%
+  select(LabResultGuid,PatientGuid, TranscriptGuid)
+
+labPanel <- read_csv("db/training_labPanel.csv") %>%
+  select(LabResultGuid, LabPanelGuid, PanelName)
+
+labObservation <- read_csv("db/training_labObservation.csv")
+
+
+# read transcript table into data frame.
+transcript <- read_csv("db/training_transcript.csv") %>%
+  select(TranscriptGuid, PatientGuid, VisitYear, Height, Weight, BMI, SystolicBP, DiastolicBP, RespiratoryRate, HeartRate, Temperature)
+
+# read smoke table into data frame.
+smoke <- read_csv("db/training_smoke.csv") %>%
+  select(PatientGuid, SmokeEffectiveYear, SmokingStatus_Description, SmokingStatus_NISTCode)
+
+#read join tables into data frames.
+transDiag <- read_csv("db/training_transcriptDiagnosis.csv")
+transMed <- read_csv("db/training_transcriptMedication.csv")
+transAllergy <- read_csv("db/training_transcriptAllergy.csv")
+```
+
+### Data Cleaning
+To prepare the data for analysis, add columns and make other modifications to the data.
+
+```{r warning=FALSE, messsage=FALSE}
+# add age column to patient data frame: derived from subtracting 2010, the median year of the patient data (range: 2009 - 2012)
+patient <- patient %>% mutate(age = 2010 - YearOfBirth)
+
+# add daibetesStatus column to patient data frame for display in graphs.
+patient$diabetesStatus <- ifelse(patient$dmIndicator, "Diabetic", "NonDiabetic")
+
+# change type of AllergyMedicationNdcCode column to character.
+allergy <- transform(allergy, AllergyMedicationNdcCode = as.character(AllergyMedicationNdcCode))
+
+# change transcript Height & Weight to numeric types
+transcript <- transform(transcript, Height = as.numeric(Height), Weight = as.numeric(Weight), Temperature = as.numeric(Temperature), RespiratoryRate = as.numeric(RespiratoryRate), HeartRate = as.numeric(HeartRate), SystolicBP = as.numeric(SystolicBP), DiastolicBP = as.numeric(DiastolicBP))
+  
+# add pulsePressure column to transcript (SystolicBP - DiastolicBP)
+transcript <- transcript %>%
+  filter(!is.na(SystolicBP)) %>% filter(!is.na(DiastolicBP)) %>% filter(SystolicBP > 0 & DiastolicBP > 0) %>%
+  mutate(pulsePressure = SystolicBP - DiastolicBP)
+
+# create medicationMap data frame linking medication names to their NDC Codes
+medicationMap <- medication %>% select(MedicationNdcCode, MedicationName) %>% group_by(MedicationNdcCode) %>% distinct(MedicationName) %>% arrange(MedicationNdcCode)
+
+```
+
+
+For diagnoses, rather than identify each individual diagnosis type, we can
+create categories of diagnoses based on the ICD9 codes
+
+```{r message = FALSE, warning = FALSE}
+
+# create diagCat column in patientDiagnosis containing diagnosis categories corresponding to ranges of ICD9 Codes
+diagnosis$diagCat <-
+  ifelse((as.integer(diagnosis$ICD9Code) < 140), 
+    "Infectious/Parasitic",
+    ifelse((as.integer(diagnosis$ICD9Code) >= 140 &
+      as.integer(diagnosis$ICD9Code) < 240), 
+      "Neoplasms",
+      ifelse((as.integer(diagnosis$ICD9Code) >=240 &
+        as.integer(diagnosis$ICD9Code) < 280),
+          "Endocrine/Nutritional/Metabolic",
+          ifelse((as.integer(diagnosis$ICD9Code) >= 280 &
+            as.integer(diagnosis$ICD9Code) < 290),
+            "Blood",
+            ifelse((as.integer(diagnosis$ICD9Code) >= 290 &
+              as.integer(diagnosis$ICD9Code) < 320),
+              "Mental",
+              ifelse((as.integer(diagnosis$ICD9Code) >= 320 &
+                as.integer(diagnosis$ICD9Code) < 390),
+                "Nervous",
+                ifelse((as.integer(diagnosis$ICD9Code) >= 390 &
+                  as.integer(diagnosis$ICD9Code) < 460),
+                  "Circulatory",
+                  ifelse((as.integer(diagnosis$ICD9Code) >= 460 &
+                    as.integer(diagnosis$ICD9Code) < 520),
+                    "Respiratory",
+                    ifelse((as.integer(diagnosis$ICD9Code) >= 520 &
+                      as.integer(diagnosis$ICD9Code) < 580),
+                      "Digestive",
+  ifelse((as.integer(diagnosis$ICD9Code) >= 580 &
+    as.integer(diagnosis$ICD9Code) < 630), 
+    "Genitourinary",
+    ifelse((as.integer(diagnosis$ICD9Code) >= 630 &
+      as.integer(diagnosis$ICD9Code) < 680), 
+      "Pregnancy",
+      ifelse((as.integer(diagnosis$ICD9Code) >=680 &
+        as.integer(diagnosis$ICD9Code) < 710),
+          "Skin",
+          ifelse((as.integer(diagnosis$ICD9Code) >=710 &
+            as.integer(diagnosis$ICD9Code) < 740),
+            "Musculoskeletal",
+            ifelse((as.integer(diagnosis$ICD9Code) >= 740 &
+              as.integer(diagnosis$ICD9Code) < 760),
+              "Congenital",
+              ifelse((as.integer(diagnosis$ICD9Code) >= 760 &
+                as.integer(diagnosis$ICD9Code) < 780),
+                "Perinatal",
+                ifelse((as.integer(diagnosis$ICD9Code) >= 780 &
+                  as.integer(diagnosis$ICD9Code) < 800),
+                  "Ill Defined", 
+                  ifelse((as.integer(diagnosis$ICD9Code) >= 800),
+                    "Injury/Poisoning", 
+                    "NULL"
+                    )
+                  )
+                )
+            )
+          )
+      )
+    )
+  ))))))))))
+```
+
+### Prepare Data Frames
+
+```{r}
+# allergy data frame
+patientAllergy <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  allergy
+)
+
+# diagnosis data frame
+patientDiagnosis <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  diagnosis
+)
+
+# labs data frame
+patientLabs <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  left_join(
+    left_join(
+      labResult, 
+      labPanel, 
+      by="LabResultGuid"
+      ),
+    labObservation,
+    by="LabPanelGuid"
+  )
+)
+
+# prescription data frame
+patientPrescription <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  inner_join(
+    prescription,
+    medication
+  )
+)
+
+# transcript data frame
+patientTranscript <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  transcript
+)
+
+# immunization data frame
+patientImmunization <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  immunization
+)
+
+# smoking data frame
+patientSmoke <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, diabetesStatus),
+  smoke
+)
+```
+
+### Additional Data Cleaning
+
+#### Allergies
+Due to the large amount of medication allergy data, we must filter the data down to medications for which at least one diabetic patient has an allergy
+and for which at least 20 patients have allergies
+
+```{r}
+# use inner join to filter patients to those 
+# with medication allergies, and pull in the names for the medications
+allergyMeds <- inner_join(patientAllergy,medicationMap, by = c("AllergyMedicationNdcCode" = "MedicationNdcCode"))
+
+# identify the medications by name for which diabetic patients have allergies
+diabeticMedNames <- allergyMeds %>% filter(dmIndicator == "1") %>% select(MedicationName) %>% distinct()
+
+# use inner join to filter patients to those using the medications for which
+# diabetic patients also have allergies (filter out all medication allergies
+# for which diabetic patients do not have allergies)
+diabeticAllergyMeds <- inner_join(allergyMeds,diabeticMedNames)
+
+# identify the medications for which at least 20 patients have allergies
+topAllergyNdcCodes <- diabeticAllergyMeds %>%
+  group_by(AllergyMedicationNdcCode) %>% 
+  summarise(n = n()) %>%
+  ungroup() %>%
+  filter(n >= 20) %>%
+  select(AllergyMedicationNdcCode)
+
+# use inner join to filter data to those medications for which at least 20 
+# patients have allergies
+diabeticAllergyMeds <- inner_join(allergyMeds,topAllergyNdcCodes)
+```
+
+```{r}
+# identify which medications are most used by diabetic patients in comparison to non-diabetic patients
+
+# get a count of prescriptions for medications used by diabetic patients
+diabeticMedicationList <- patientPrescription %>% filter(dmIndicator == 1) %>% group_by(MedicationName) %>% summarise(n = n()) %>% ungroup() %>% arrange(desc(n))
+
+# join with a count of prescriptions for medications used by all patients
+diabeticMedicationList <- inner_join(diabeticMedicationList, patientPrescription %>% group_by(MedicationName) %>% summarise(n = n()) %>% ungroup() %>% arrange(desc(n)), by="MedicationName")
+
+# get the ratio between diabetic prescriptions and total prescriptions
+diabeticMedicationList <- diabeticMedicationList %>%
+  mutate(useRatio = n.x/n.y)
+
+# had to tweak the filter to get a reasonably small set of the medications with the highest ratio of diabetic prescriptions with the highest number of overall prescriptions
+topDiabeticMedicationList <- diabeticMedicationList %>% filter(n.y > 300 & useRatio > .3) %>% arrange(desc(useRatio))
+
+# create a data frame limited to the top diabetic prescription list
+topDiabeticPrescriptions <- inner_join(patientPrescription, topDiabeticMedicationList, by="MedicationName")
+
+# sort the abnormal statuses in the labs data
+patientLabs$AbnormalFlagsSorted = factor(patientLabs$AbnormalFlags, levels = rev(c("Panic Low", "Alert Low", "Below Normal Low", "NA", "Above Normal High", "Alert High", "Panic High", "Abnormal Result", "UKNOWN")))
+
+```
+
+### Data Analysis
+
+#### Baseline Comparison
+As a baseline comparison between the diabetic and non-diabetic patient populations in the dataset, 81% of the overall population is identified as non-diabetic and 19% is identified as diabetic. 
+
+```{r}
+ggplot(patient, aes(x=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic")), fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic")))) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  labs(title = "Patients with Diabetes", fill="Diabetes Status", y="Percent", x="Diabetes Status") +
+  theme(plot.title = element_text(hjust = "0.5"))
+```
+
+#### Age
+It appears that the central tendency for Age is higher in the diabetic population than in the non-diabetic population
+
+```{r}
+boxplot(age~diabetesStatus,data=patient, outline = FALSE, main = "Patient Age", ylab = "Age (yr)", xlab = "Diabetes Status")
+```
+
+#### Gender
+The number of patients with diabetes is similar between males and females, but the ratio of males with diabetes is higher.
+
+```{r}
+ggplot(arrange(patient, rev(dmIndicator)), aes(x=Gender,fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic")))) +
+  geom_bar(position = "fill") +
+  labs(title = "Patient Gender", fill="Diabetes Status") +
+  theme(plot.title = element_text(hjust = "0.5"))
+```
+
+#### Allergies
+Among non-medical allergy types, there appears to be a large proportion of diabetic patients with egg and peanut allergies in comparison to the general population.  The number of diabetic patients with egg allergies actually outnumbers non-diabetic patients.
+
+```{r}
+patientAllergy %>%
+  filter(AllergyType != "Medication") %>%
+  ggplot(aes(x=AllergyType, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title = "Incidence of Allergies", fill = "Diabetes Status") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
+
+patientAllergy %>%
+  filter(AllergyType == "Egg") %>%
+  ggplot(aes(x=diabetesStatus, fill=factor(ReactionName)))+
+  geom_bar(position="fill") +
+  labs(title = "Egg Allergy Reactions", fill = "Diabetes Status") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+patientAllergy %>%
+  filter(AllergyType == "Peanut") %>%
+  ggplot(aes(x=diabetesStatus, fill=factor(ReactionName)))+
+  geom_bar(position="fill") +
+  labs(title = "Severity of Peanut Allergy", fill = "Diabetes Status") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Among the allergies to medicine, the largest proportion of diabetic patients with an allergy compared to non-diabetic patients is to Lisinopril.  However, the ratio is not significantly greater than the baseline.
+
+```{r}
+diabeticAllergyMeds %>%
+  ggplot(aes(x=MedicationName, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title="Incidence of Medication Allergies", fill = "Diabetes Status") +
+  scale_x_discrete(label=function(x) abbreviate(x, minlength=10)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+```
+
+#### Diagnosis Categories
+The diagnosis categories with the highest ratio between diabetic and non-diabetic patients are Circulatory and Endocrine/Nutritional/Metabolic.
+
+```{r}
+patientDiagnosis %>%
+  filter(diagCat != "NULL") %>%
+  ggplot(aes(x=diagCat, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title="Comorbidities", fill = "Diabetes Status") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+
+patientDiagnosis %>%
+  filter(diagCat == "Circulatory") %>%
+  filter(as.integer(ICD9Code) < 430) %>%
+  ggplot(aes(x=factor(as.integer(ICD9Code)), fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title="Circulatory Comorbidities", fill = "Diabetes Status") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+patientDiagnosis %>%
+  filter(diagCat == "Circulatory") %>%
+  filter(as.integer(ICD9Code) < 430) %>%
+  filter(Acute == 1) %>%
+  ggplot(aes(x=factor(as.integer(ICD9Code)), fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title="Acute Circulatory Comorbidities", fill = "Diabetes Status", x = "ICD9 Codes") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+```
+
+
+### Prescription Data
+There are 18 medications with at least 300 prescriptions and at least 30% use by diabetic patients. 
+
+```{r}
+topDiabeticPrescriptions %>%
+  ggplot(aes(x=MedicationName, fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="fill") +
+  scale_x_discrete(label=function(x) abbreviate(x, minlength=10)) +
+  labs(title = "Top Diabetic Medication Usage", fill = "Diabetes Status", y="Percent") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+```
+
+### Weight, Height & BMI
+Diabetic patients have a slightly higher weight than non-diabetic patients.
+
+```{r}
+#patientTranscript %>%
+#  filter(Weight < 500 & Weight > 0) %>%
+#  ggplot(aes(x=Weight,fill=diabetesStatus)) +
+#  geom_histogram(binwidth=50, position="dodge")
+
+boxplot(Weight~diabetesStatus, data=patientTranscript %>% filter(!is.na(Weight)) %>%filter(Weight < 600 & Weight > 0), outline = FALSE, main = "Weight", ylab = "Weight (lb)", xlab = "Diabetes Status")
+```
+
+Diabetic patients have a slightly shorter height than non-diabetic patients.
+
+```{r}
+#heightData = patientTranscript %>% distinct(PatientGuid,.keep_all = TRUE)
+boxplot(Height~diabetesStatus, data = patientTranscript %>% filter(!is.na(Height)) %>% filter(Height < 100 & Height > 10), outline=FALSE, main = "Height", ylab = "Height (in)", xlab = "Diabetes Status")
+```
+
+Diabetic patients have a higher BMI than non-diabetic patients
+
+```{r}
+boxplot(BMI~diabetesStatus, data=patientTranscript %>% filter(!is.na(BMI)) %>% filter(BMI >0), outline=FALSE, main = "BMI", ylab = "BMI", xlab = "Diabetes Status")
+```
+
+### Temperature
+There is no significant difference in temperature between diabetic and non-diabetic patients.
+
+```{r}
+boxplot(Temperature~diabetesStatus, data=patientTranscript %>% filter(!is.na(Temperature)), outline = FALSE, main = "Temperature", ylab = "Temperature (deg F)", xlab = "Diabetes Status")
+```
+
+### Respiratory Rate
+There is no significant difference in respiratory rate between diabetic and non-diabetic patients.
+
+```{r} 
+boxplot(RespiratoryRate~diabetesStatus, data=patientTranscript %>% filter(!is.na(RespiratoryRate)), outline = FALSE, main = "Respiratory Rate", ylab = "Respiratory Rate (bpm)", xlab = "Diabetes Status")
+```
+
+### Systolic BP, Diastolic BP, and Pulse Pressure
+Systolic BP is higher for diabetic patients than non-diabetic patients.
+
+```{r}
+boxplot(as.integer(SystolicBP)~diabetesStatus, data=patientTranscript %>% filter(!is.na(SystolicBP)) %>% filter(SystolicBP > 0), outline=FALSE, main = "Systolic BP", ylab = "Systolic BP (mmHg)", xlab = "Diabetes Status")
+```
+
+Diastolic BP is slightly lower for diabetic patients than non-diabetic patients.
+
+```{r}
+boxplot(as.integer(DiastolicBP)~diabetesStatus, data=patientTranscript %>% filter(!is.na(DiastolicBP)) %>% filter(DiastolicBP > 0), outline=FALSE, main = "Diastolic BP", ylab = "Diastolic BP (mmHg)", xlab = "Diabetes Status")
+```
+
+The pulse pressure of diabetic patients is slightly higher than non-diabetic patients.
+
+```{r}
+boxplot(as.integer(pulsePressure)~diabetesStatus, data=patientTranscript %>% filter(pulsePressure != "NULL"), outline=FALSE, main = "Pulse Pressure", ylab = "Pulse Pressure (mmHg)", xlab = "Diabetes Status")
+```
+
+### Abnormal Labs
+The lab results were limited to those for which there were sufficient abnormal readings data for the diabetic population.  For each lab result, an overall measure of central tendency was analyzed, as well as an analysis of abnormal lab result status.
+
+```{r}
+patientLabs %>% filter(dmIndicator == 1) %>% filter(IsAbnormalValue == 1) %>% group_by(HL7Text) %>% summarise(n = n()) %>% ungroup() %>% arrange(desc(n))
+```
+
+#### Hemoglobin Lab Results
+Hemoglobin levels have a lower central tendency in diabetic patients than in non-diabetic patients.  When results recorded as abnormal are separated out, the diabetic population has a larger percentage of below normal readings.  The central tendency of above normal readings were higher and of below normal readings were lower among the diabetic population.  The central tendency of normal readings was slightly lower in the diabetic population.
+
+```{r}
+boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Hemoglobin"), outline=FALSE, main = "Hemoglobin", ylab = "Hemoglobin (g/dL)", xlab = "Diabetes Status")
+
+
+patientLabs %>%
+  filter(HL7Text == "Hemoglobin") %>%
+  ggplot(aes(x=diabetesStatus, fill=AbnormalFlagsSorted))+
+  geom_bar(position="fill") +
+  labs(title = "Hemoglobin Result Status", x = "Diabetes Status", fill = "Result Status", y = "Percent") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+patientLabs %>%
+  filter(HL7Text == "Hemoglobin") %>%
+  ggplot(aes(x=diabetesStatus,y=ObservationValue, fill=AbnormalFlags)) +
+  stat_boxplot(geom="boxplot", position="dodge", coef=2, outlier.shape=NA, na.rm=TRUE, show.legend = TRUE) + 
+  labs(title = "Hemoglobin Lab Results", x = "Diabetes Status", fill = "Result Status", y = "Hemoglobin (g/dL)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+\pagebreak
+
+#### Hematocrit Lab Results
+The central tendency of Hematocrit percentage was lower in the diabetic population than in the non-diabetic population. The ratio of above normal readings was lower and of below normal readings was higher among the diabetic population.  The central tendency of above normal readings was higher and of below normal readings was lower in the diabetic population.  The central tendency of normal readings was lower in the diabetic population.
+
+```{r}
+boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Hematocrit"), outline=FALSE)
+
+patientLabs %>%
+  filter(HL7Text == "Hematocrit") %>%
+  ggplot(aes(x=diabetesStatus, fill=AbnormalFlagsSorted))+
+  geom_bar(position="fill") +
+  labs(title = "Hematocrit Result Status", x = "Diabetes Status", fill = "Result Status", y = "Percent") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
+
+patientLabs %>%
+  filter(HL7Text == "Hematocrit") %>%
+  ggplot(aes(x=diabetesStatus,y=ObservationValue, fill=AbnormalFlags)) +
+  stat_boxplot(geom="boxplot", position="dodge", coef=2, outlier.shape=NA, na.rm=TRUE, show.legend = TRUE) + 
+  labs(title = "Hematocrit Lab Results", x = "Diabetes Status", fill = "Result Status", y = "Hematocrit Percent") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+\pagebreak
+
+#### Chloride Lab Results
+The Chloride lab results are more spread out for the diabetic population than for the non-diabetic population.  There's a larger ratio of both above and below normal readings in the diabetic population, but the abnormal levels aren't as severe.
+
+```{r}
+boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Chloride"), outline=FALSE)
+
+patientLabs %>%
+  filter(HL7Text == "Chloride") %>%
+  ggplot(aes(x=diabetesStatus, fill=AbnormalFlagsSorted))+
+  geom_bar(position="fill") +
+  labs(title = "Chloride Result Status", x = "Diabetes Status", fill = "Result Status", y = "Percent") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
+
+patientLabs %>%
+  filter(HL7Text == "Chloride") %>%
+  ggplot(aes(x=diabetesStatus,y=ObservationValue, fill=AbnormalFlags)) +
+  stat_boxplot(geom="boxplot", position="dodge", coef=2, outlier.shape=NA, na.rm=TRUE, show.legend = TRUE) + 
+  labs(title = "Chloride Lab Results", x = "Diabetes Status", fill = "Result Status", y = "Chloride (mmol/L)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+\pagebreak
+
+#### Platelets Lab Results
+The central tendency of Platelet levels is lower in the diabetic population than in the non-diabetic population, particularly in the normal set.  The ratio of both above and below normal readings are greater in the diabetic population, but the abnormal levels aren't as severe.
+
+```{r}
+boxplot(ObservationValue~diabetesStatus, data=patientLabs %>% filter(HL7Text == "Platelets"), outline=FALSE)
+
+patientLabs %>%
+  filter(HL7Text == "Platelets") %>%
+  ggplot(aes(x=diabetesStatus, fill=AbnormalFlagsSorted))+
+  geom_bar(position="fill") +
+  labs(title = "Platelets Result Status", x = "Diabetes Status", fill = "Result Status", y = "Percent") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), plot.title = element_text(hjust = 0.5))
+
+patientLabs %>%
+  filter(HL7Text == "Platelets") %>%
+  ggplot(aes(x=diabetesStatus,y=ObservationValue, fill=AbnormalFlags)) +
+  stat_boxplot(geom="boxplot", position="dodge", coef=2, outlier.shape=NA, na.rm=TRUE, show.legend = TRUE) + 
+  labs(title = "Platelets Lab Results", x = "Diabetes Status", fill = "Result Status", y = "Platelets (x10E3/uL)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+#### Immunizations
+There were only 8 data points in the immunization table.  This is not enough data to include in a predictive model.
+
+```{r}
+patientImmunization %>%
+  ggplot(aes(x=as.factor(CvxCode), fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title="Immunizations", fill = "Diabetes Status", x="Cvx Code") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+```
+
+### Smoking Status
+None of the smoking status data appears to be significantly different from the baseline.
+
+```{r}
+patientSmoke %>%
+  ggplot(aes(x=as.factor(SmokingStatus_NISTCode), fill=factor(diabetesStatus, levels = c("NonDiabetic","Diabetic"))))+
+  geom_bar(position="dodge") +
+  labs(title="Smoking Status", fill = "Diabetes Status", x="Smoking Status") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+```
+
+### Promising Variables for Data Models
+After analyzing the data, the most promising variables that might contribute to a predictive model are:
+
+* Age
+* Gender
+* Allergies
+* Diagnosis Categories
+* Prescriptions (?)
+* BMI
+* Pulse Pressure
+* Hemoglobin Levels
+* Hematocrit Levels
+* Platelet Levels
+
+### Considerations for model construction
+There are some details that need to be taken into account when constructing the data models.  Some of the data is continuous and some of it is categorical.  Each patient may have numerous observations, and some of them are easier to combine than others.  For instance, a specific allergy might be linked to one transcript, which may contain a BMI and/or Pulse Pressure measurement, but others may not.  All of the data can be joined with the transcript table, which determines which data can be condensed within a specific observation.
+
+Although some lab observations are from the same lab panel and can thus be condensed into a single observation, none of the labs are associated with transcripts in the transcript table.  Thus, all of the lab data is independent from the rest of the database.
+
+### Predictive Models
+
+#### Lab Observations
+The first data model is based on variables found in the lab observations.  Because the lab observations do not connect with other data in the dataset, this model will simply combine the desired lab data with the patient data (age and gender).  In the exploratory analysis, the Hemoglobin, Hematocrit, and Platelet levels seemed promising for a model.  In order to use them in a model, we must filter out the other lab observations, move the desired observations into their own columns, and then collapse them into a single row for each lab panel.
+```{r}
+# platelet observations
+platelets <- labObservation %>%
+  filter(HL7Text == "Platelets" & !is.na(ObservationValue)) %>%
+  select(LabPanelGuid, platelets = ObservationValue)
+
+# hemoglobin observations
+hemoglobin <- labObservation %>%
+  filter(HL7Text == "Hemoglobin" & !is.na(ObservationValue)) %>%
+  select(LabPanelGuid, hemoglobin = ObservationValue)
+
+# hematocrit observations
+hematocrit <- labObservation %>%
+  filter(HL7Text == "Hematocrit" & !is.na(ObservationValue)) %>%
+  select(LabPanelGuid, hematocrit = ObservationValue)
+
+# combined data frame
+labFrame <- right_join( # only include lab panels with our data
+  labResult,
+  right_join( # only include observations with our data
+    labPanel,
+    full_join( # combine all results data
+      hemoglobin, 
+      full_join( # combine all results data
+        hematocrit, 
+        platelets, 
+        by="LabPanelGuid"
+        ),
+      by="LabPanelGuid"
+      ),
+    by="LabPanelGuid"
+  ),
+  by="LabResultGuid"
+) %>% select (PatientGuid, hemoglobin, hematocrit, platelets)
+```
+
+A few of the observation values are missing.  Imputation will provide appropriate estimates for these values.
+
+```{r}
+set.seed(1234)
+labsImputed = complete(mice(labFrame))
+```
+
+The lab data can now be joined to the patient data frame to pull in the patient data, as well as the indicator for diabetes.
+
+```{r}
+labData <- inner_join(
+  patient %>% 
+    select(PatientGuid, dmIndicator, age, Gender) %>%
+    transform(
+    dmIndicator = as.factor(dmIndicator),
+    Gender = as.factor(Gender)
+  ),
+  labsImputed
+  )
+```
+
+One method of evaluating the model is to split the data into training and test sets, and then train the model on the training data and then use it to predict against the test set.
+
+```{r}
+set.seed(1234)
+labSplit = sample.split(labData$dmIndicator, SplitRatio = 0.7)
+labTrain = subset(labData, labSplit == TRUE)
+labTest = subset(labData, labSplit == FALSE)
+labForest = randomForest(dmIndicator ~ age + Gender + hematocrit + hemoglobin + platelets, data = labTrain, nodesize=25, ntree=500, na.action = na.omit, importance=TRUE, do.trace=100)
+```
+
+A confusion matrix will show the accuracy of the model.  This model has an accuracy of about 88%, though for a relatively small subset of the data.
+
+```{r}
+labPred = predict(labForest, newdata = labTest)
+
+table(labTest$dmIndicator, labPred)
+```
+
+A second method of evaluation is to use cross-validation.  The best tuning of the model provides an accuracy of 89.6% and a Kappa of 31%.  This model may have some promise.
+
+```{r}
+set.seed(1234)
+tr_control = trainControl(method = "repeatedcv", number = 10, repeats = 1)
+cvModel <- train(
+  dmIndicator ~ age + Gender + hematocrit + hemoglobin + platelets, data = labData, method = "rf", trControl = tr_control
+)
+cvModel
+```
+
+#### Diagnosis Data
+Another subset of the data is the diagnosis data.  This data can be linked to the transcript data for various measurements taken on patient visits (blood pressure, etc.).  But first, there are some outliers in the transcript data that should be filtered out.
+
+```{r}
+transSubset <- transcript %>% select (TranscriptGuid, PatientGuid, BMI, pulsePressure) %>% filter(BMI > 10 & BMI < 60 & pulsePressure > 20 & pulsePressure < 100)
+```
+
+The diagnosis data can now be joined with the transcript data and the patient data, selecting the fields in each data frame that will contribute to the model.
+
+```{r}
+diagSubset <- inner_join(
+  patient %>% select(PatientGuid, dmIndicator, Gender, age) %>%
+    transform(
+      dmIndicator = as.factor(dmIndicator),
+      Gender = as.factor(Gender)
+      ),
+  inner_join( 
+    inner_join(
+      diagnosis %>% 
+        select(DiagnosisGuid, PatientGuid, diagCat) %>%
+        transform(diagCat = as.factor(diagCat)),
+      transDiag
+    ),
+    transSubset
+  )
+) %>% select(PatientGuid, dmIndicator, Gender, age, diagCat, BMI, pulsePressure) %>%
+  filter(!is.na(diagCat))
+```
+
+In order to isolate the various diagnoses, the variable containing factors for the different diagnosis categories must be split out into columns.
+
+```{r}
+diagCat <- with(diagSubset, data.frame(PatientGuid, dmIndicator, Gender, age, BMI, pulsePressure, model.matrix( ~ diagCat+0))) %>%
+  rename(
+    Blood = diagCatBlood,
+    Circulatory = diagCatCirculatory,
+    Congenital = diagCatCongenital,
+    Digestive = diagCatDigestive,
+    Endo = diagCatEndocrine.Nutritional.Metabolic,
+    Genit = diagCatGenitourinary,
+    IllDef = diagCatIll.Defined,
+    Infect = diagCatInfectious.Parasitic,
+    Injury = diagCatInjury.Poisoning,
+    Mental = diagCatMental,
+    Musc = diagCatMusculoskeletal,
+    Cancer = diagCatNeoplasms,
+    Nervous = diagCatNervous,
+    Perinatal = diagCatPerinatal,
+    Pregnant = diagCatPregnancy,
+    Resp = diagCatRespiratory,
+    Skin = diagCatSkin
+  ) %>%
+  transform(
+    Blood = as.logical(Blood),
+    Circulatory = as.logical(Circulatory),
+    Congenital = as.logical(Congenital),
+    Digestive = as.logical(Digestive),
+    Endo = as.logical(Endo),
+    Genit = as.logical(Genit),
+    IllDef = as.logical(IllDef),
+    Infect = as.logical(Infect),
+    Injury = as.logical(Injury),
+    Mental = as.logical(Mental),
+    Musc = as.logical(Musc),
+    Cancer = as.logical(Cancer),
+    Nervous = as.logical(Nervous),
+    Perinatal = as.logical(Perinatal),
+    Pregnant = as.logical(Pregnant),
+    Resp = as.logical(Resp),
+    Skin = as.logical(Skin)
+    
+  )
+```
+
+The data can be aggregated in order to collapse the various diagnoses into a single row for each patient.
+
+```{r}
+diagAgg <- diagCat %>%
+  group_by(PatientGuid, dmIndicator, BMI, age, Gender, pulsePressure) %>%
+  summarise(
+    Blood = as.logical(max(Blood)),
+    Circulatory = as.logical(max(Circulatory)),
+    Congenital = as.logical(max(Congenital)),
+    Digestive = as.logical(max(Digestive)),
+    Endo = as.logical(max(Endo)),
+    Genit = as.logical(max(Genit)),
+    IllDef = as.logical(max(IllDef)),
+    Infect = as.logical(max(Infect)),
+    Injury = as.logical(max(Injury)),
+    Mental = as.logical(max(Mental)),
+    Musc = as.logical(max(Musc)),
+    Cancer = as.logical(max(Cancer)),
+    Nervous = as.logical(max(Nervous)),
+    Perinatal = as.logical(max(Perinatal)),
+    Pregnant = as.logical(max(Pregnant)),
+    Resp = as.logical(max(Resp)),
+    Skin = as.logical(max(Skin))
+  ) %>% transform(
+    PatientGuid = as.character(PatientGuid)
+  )
+```
+
+```{r}
+diagAgg2 <- diagCat %>%
+  group_by(PatientGuid, dmIndicator, age, Gender) %>%
+  summarise(
+    Blood = as.logical(max(Blood)),
+    Circulatory = as.logical(max(Circulatory)),
+    Congenital = as.logical(max(Congenital)),
+    Digestive = as.logical(max(Digestive)),
+    Endo = as.logical(max(Endo)),
+    Genit = as.logical(max(Genit)),
+    IllDef = as.logical(max(IllDef)),
+    Infect = as.logical(max(Infect)),
+    Injury = as.logical(max(Injury)),
+    Mental = as.logical(max(Mental)),
+    Musc = as.logical(max(Musc)),
+    Cancer = as.logical(max(Cancer)),
+    Nervous = as.logical(max(Nervous)),
+    Perinatal = as.logical(max(Perinatal)),
+    Pregnant = as.logical(max(Pregnant)),
+    Resp = as.logical(max(Resp)),
+    Skin = as.logical(max(Skin)),
+    BMI = mean(BMI),
+    pulsePressure = mean(pulsePressure)
+  ) %>% transform(
+    PatientGuid = as.character(PatientGuid)
+  )
+```
+
+The aggregated diagnosis data can now be split into the training and test sets.
+
+```{r}
+set.seed(1234)
+diagSplit = sample.split(diagAgg$dmIndicator, SplitRatio = 0.7)
+diagTrain = subset(diagAgg, diagSplit == TRUE)
+diagTest = subset(diagAgg, diagSplit == FALSE)
+```
+
+A random forest model can now be trained using the training data set.  After some experimentation, the Blood and Digestive diagnosis indicators were added to the Circulatory and Endocrine diagnosis indicators from the exploratory analysis.
+
+```{r}
+set.seed(1234)
+diagForest = randomForest(dmIndicator ~ age + Gender + Endo + Circulatory + pulsePressure + BMI, data = diagTrain, nodesize=25, ntree=500, na.action = na.omit, importance=TRUE, do.trace=100)
+```
+
+After using the model to create a prediction against the test set, a confusion matrix shows that this model has a 79% accuracy.  This is lower than the lab model, but uses a much larger subset of the data.
+
+```{r}
+diagPred = predict(diagForest, newdata = diagTest)
+
+table(diagTest$dmIndicator, diagPred)
+```
+
+Cross validation shows that the optimal tuning of this model produces an accuracy of 81.4% and a Kappa of 43%.
+
+```{r}
+set.seed(1234)
+tr_control = trainControl(method = "repeatedcv", number = 10, repeats = 1)
+cvModel <- train(
+  dmIndicator ~ age + Gender + pulsePressure + BMI + Endo + Circulatory, data = diagAgg, method = "rf", trControl = tr_control
+)
+cvModel
+```
+
+
+#### Combined Model
+
+A third model will attempt to combine data from patients, allergies, diagnoses and transcript data.  The large number of Medication categories exceeds the limits of model functions, so only the identifiers in the prescription data will be used to flatten the dataset as much as possible.
+
+First, the prescription data is joined to the transcript ids.
+
+```{r}
+prescriptionFrame <- left_join(
+  left_join(
+    left_join(
+      prescription %>% select(PrescriptionGuid, MedicationGuid),
+      medication %>% select(MedicationGuid, PatientGuid, DiagnosisGuid)
+      ),
+      transMed
+  ),
+  transcript %>% select(TranscriptGuid,PatientGuid)
+) %>% select(PatientGuid, TranscriptGuid, DiagnosisGuid)
+```
+
+The allergy data is joined to the transcript ids.
+
+```{r}
+allergyFrame <- left_join(
+  left_join(
+    allergy %>% filter(AllergyType != "Medication") %>%
+      select(AllergyGuid,PatientGuid,AllergyType),
+    transAllergy
+    ),
+  transcript %>% select(TranscriptGuid,PatientGuid)
+) %>% select (PatientGuid, AllergyType, TranscriptGuid) %>%
+  transform(AllergyType = as.factor(AllergyType))
+```
+
+The diagnosis data is joined to the transcript ids.
+
+```{r}
+diagnosisFrame <- left_join(
+  left_join(
+    diagnosis %>%
+      select(DiagnosisGuid, PatientGuid, diagCat),
+    transDiag
+  ),
+  transcript %>% select(TranscriptGuid, PatientGuid)
+) %>% select (DiagnosisGuid, PatientGuid, diagCat, TranscriptGuid) %>%
+  transform(diagCat = as.factor(diagCat))
+```
+
+The model frame is now constructed using the allergy, diagnosis, and prescription frames.
+
+```{r}
+patientFrame <- left_join(
+  left_join(
+    left_join(
+      left_join(
+        patient %>% select(PatientGuid, dmIndicator, age, Gender) %>%
+          transform(
+            dmIndicator = as.factor(dmIndicator),
+            Gender = as.factor(Gender)
+          ),
+        allergyFrame
+      ),
+      diagnosisFrame
+    ),
+    prescriptionFrame
+  ),
+  transcript %>% select(TranscriptGuid, BMI, pulsePressure)
+)
+```
+
+The data frame is split into training and test data frames.
+
+```{r}
+set.seed(1234)
+patientSplit = sample.split(patientFrame$dmIndicator, SplitRatio = 0.7)
+patientTrain = subset(patientFrame, patientSplit == TRUE)
+patientTest = subset(patientFrame, patientSplit == FALSE)
+```
+
+A random forest model based on age, gender and allergy type and diagnosis category is trained.  NA values are omitted.  After some experimentation, the best results come from using Gender, age, and Allergy Type as independent variables.  This also reduces the number of ommitted rows, which yields a larger subset of the data in the evaluation.
+
+```{r}
+set.seed(1234)
+patientForest = randomForest(dmIndicator ~ Gender + age + AllergyType, data = patientTrain, nodesize=25, ntree=500, na.action = na.omit, importance=TRUE, do.trace=100)
+```
+
+The model is used to predict against the test data.  A confusion matrix provides the accuracy, which is 95%.  This actually seems a little high.
+```{r}
+predictForest = predict(patientForest, newdata = patientTest)
+
+table(patientTest$dmIndicator, predictForest)
+```
+
+Although this is still a small subset of the overall data, due to the omitted NA values, it is larger and more accurate than the lab model.  Cross validation shows that it is 99% accurate and has a Kappa of 94.5%.  This may actually be an indicator of flaws in the model, since it seems unlikely that the model is actually 99% accurate.
+
+```{r}
+set.seed(1234)
+tr_control = trainControl(method = "repeatedcv", number = 10, repeats = 1, verboseIter = TRUE)
+cvModel <- train(
+  dmIndicator ~ Gender + age + AllergyType + diagCat + BMI, data = patientFrame, method = "rf", trControl = tr_control, na.action = na.omit
+)
+cvModel
+```
+
+The missing values can be estimated through imputation.  It's important to omit the indicator variable during imputation.
+
+```{r}
+set.seed(1234)
+patientImputed <- complete(mice(patientFrame %>% select(-dmIndicator, -TranscriptGuid, -DiagnosisGuid)))
+```
+
+Once imputation is complete, the indicator variable can be merged back in.
+
+```{r}
+patientImputed <- merge(
+  patient %>% select (PatientGuid, dmIndicator) %>%
+    transform(dmIndicator = as.factor(dmIndicator)),
+  patientImputed
+)
+```
+
+The data can then be split into training and test sets.
+
+```{r}
+set.seed(1234)
+patientSplit = sample.split(patientImputed$dmIndicator, SplitRatio = 0.7)
+patientTrain = subset(patientImputed, patientSplit == TRUE)
+patientTest = subset(patientImputed, patientSplit == FALSE)
+```
+
+A random forest model is trained with the training portion of the imputed data set.  After some experimentation, the imputed diagCat and BMI variables need to be added back in to get the best fit.
+
+```{r}
+set.seed(1234)
+patientForest = randomForest(dmIndicator ~ Gender + age + AllergyType + diagCat + BMI, data = patientTrain, nodesize=25, ntree=500, na.action = na.omit, importance=TRUE, do.trace=100)
+```
+
+The prediction on the test data proves to be only 80% accurate.
+```{r}
+predictForest = predict(patientForest, newdata = patientTest)
+
+table(patientTest$dmIndicator, predictForest)
+```
+
+Cross-validation against the imputed data set confirms an accuracy of 80%, but has an extremely low Kappa score of 17%.  The imputed data may not be helping the model.
+
+```{r}
+set.seed(1234)
+tr_control = trainControl(method = "repeatedcv", number = 10, repeats = 1, verboseIter = TRUE)
+cvModel <- train(
+  dmIndicator ~ Gender + age + AllergyType + diagCat, data = patientImputed, method = "rf", trControl = tr_control, na.action = na.omit
+)
+cvModel
+```
+
+#### Conclusion
+Based on the preliminary results of both the exploratory analysis and predictive models, we can draw a few conclusions.  Age and Gender are both good contributors to predictive models.  Males are at a higher risk than females, as are older patients.  Elevated hemoglobin and hematocrit levels and abnormal platelet levels are also predictive of Type 2 Diabetes.  Pulse Pressure and BMI, as well as existence of other Endocrine or Circulatory diseases are also predictive of Type 2 Diabetes.  There is some indication that Allergies may prove to be a strong predictor for Type 2 Diabetes, as well.
+
+There are limitations to this study.  There was difficulty in linking specific lab tests to specific doctor visits, so that it is difficult to get a thorough overall picture of the relationship between these results and other characteristics and readings from the patients.  Also, due to the number of medications, they were not included in the models and their influence is therefore unknown.
+
+Based on the findings of this project, it is recommended that further study be performed on the role of allergies in the risk of development of type 2 diabetes.  Unlike factors such as BMI and blood pressure, which have well known connections to diabetes, this may yield some new understanding of risk factors.  Further predictive models should be created with broader patient data sets to confirm and clarify these preliminary models.
